@@ -1,0 +1,16 @@
+# Internal: brainstorm, spec, research, roadmap, ADR, evidence
+internal/
+
+# Secrets & local state
+.env
+.state/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*_override.tf
+
+# macOS
+.DS_Store
