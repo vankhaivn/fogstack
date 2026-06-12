@@ -148,11 +148,13 @@ capture_endpoints() {
   env -i PATH="${PATH}" bash -c '
     set -Eeuo pipefail
     eval "$1"
-    [[ "${AWS_ENDPOINT_URL}" == "http://localhost:4566" ]]
     [[ "${KUBECONFIG}" == */.state/kubeconfig.yaml ]]
     [[ "${KUBE_CONTEXT}" == "kind-fogstack" ]]
     [[ "${REGISTRY}" == "localhost:5001" ]]
     [[ "${POSTGRES_URL}" == postgresql://* ]]
+    [[ -z "${AWS_ENDPOINT_URL:-}" ]]
+    [[ -z "${OPENSEARCH_URL:-}" ]]
+    [[ -z "${DASHBOARDS_URL:-}" ]]
   ' bash "${output}" >> "${ENDPOINTS_LOG}" 2>&1
 }
 

@@ -1,0 +1,5 @@
+cluster.name: fogstack-opensearch
+node.name: fogstack-opensearch
+discovery.type: single-node
+network.host: 0.0.0.0
+plugins.security.disabled: true

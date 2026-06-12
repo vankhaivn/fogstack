@@ -1,0 +1,22 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: sample-app
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    app.kubernetes.io/managed-by: fogstack
+spec:
+  parentRefs:
+    - name: {{ .Values.gatewayName | quote }}
+  hostnames:
+{{- range .Values.hostnames }}
+    - {{ . | quote }}
+{{- end }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ .Values.serviceName | quote }}
+          port: {{ .Values.servicePort }}

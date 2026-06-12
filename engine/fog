@@ -50,7 +50,8 @@ POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-test}"
 POSTGRES_DB="${POSTGRES_DB:-appdb}"
 AWS_ENDPOINT_URL="${AWS_ENDPOINT_URL:-http://localhost:4566}"
 OPENSEARCH_URL="${OPENSEARCH_URL:-http://localhost:9200}"
-FOGSTACK_VERSION="${FOGSTACK_VERSION:-0.2.0-phase2}"
+DASHBOARDS_URL="${DASHBOARDS_URL:-http://localhost:5601}"
+FOGSTACK_VERSION="${FOGSTACK_VERSION:-0.3.0-phase3}"
 STATE_PROFILE_FILE="${REPO_ROOT}/.state/profile"
 CPK_PID_FILE="${FOGSTACK_CPK_PID_FILE:-/tmp/fogstack-cpk.pid}"
 CPK_LOG_FILE="${FOGSTACK_CPK_LOG_FILE:-/tmp/fogstack-cpk.log}"
@@ -63,6 +64,7 @@ Usage:
   fog status [--profile minimal|full]
   fog endpoints [--profile minimal|full]
   fog doctor [--profile minimal|full]
+  fog tf-init <dir>
   fog version
 EOF
 }
@@ -132,7 +134,7 @@ parse_profile_args() {
 profile_ports() {
   case "$1" in
     minimal) printf '%s\n' "${REGISTRY_PORT}" "${POSTGRES_PORT}" ;;
-    full) printf '%s\n' 4566 "${REGISTRY_PORT}" "${POSTGRES_PORT}" 9200 ;;
+    full) printf '%s\n' 4566 "${REGISTRY_PORT}" "${POSTGRES_PORT}" 9200 5601 ;;
   esac
 }
 
@@ -142,6 +144,7 @@ expected_port_owner() {
     "${REGISTRY_PORT}") printf '%s\n' "${REGISTRY_NAME}" ;;
     "${POSTGRES_PORT}") printf '%s\n' 'fogstack-postgres' ;;
     9200) printf '%s\n' 'fogstack-opensearch' ;;
+    5601) printf '%s\n' 'fogstack-dashboards' ;;
     *) printf '%s\n' '' ;;
   esac
 }
@@ -231,6 +234,11 @@ shellcheck_cli_version() {
   shellcheck --version 2>/dev/null | awk '/^version:/ {print $2; exit}' || true
 }
 
+aws_cli_version() {
+  command -v aws >/dev/null 2>&1 || return 0
+  aws --version 2>&1 | awk -F'[ /]' '{print $2; exit}' || true
+}
+
 check_port() {
   local port="$1"
   local owner
@@ -315,6 +323,10 @@ cmd_doctor() {
   check_cmd terraform
   check_cmd cloud-provider-kind
   check_cmd shellcheck
+  check_cmd curl
+  if [[ "${profile}" == "full" ]]; then
+    check_cmd aws
+  fi
 
   check_pin "docker" "${DOCKER_SERVER_VERSION:-}" "$(docker_server_version)"
   check_pin "docker compose" "${DOCKER_COMPOSE_VERSION:-}" "$(docker_compose_version)"
@@ -323,6 +335,9 @@ cmd_doctor() {
   check_pin "helm" "${HELM_VERSION:-}" "$(helm_cli_version)"
   check_pin "terraform" "${TERRAFORM_VERSION:-}" "$(terraform_cli_version)"
   check_pin "shellcheck" "${SHELLCHECK_VERSION:-}" "$(shellcheck_cli_version)"
+  if [[ "${profile}" == "full" ]]; then
+    check_pin "aws" "${AWS_CLI_VERSION:-}" "$(aws_cli_version)"
+  fi
   if [[ -n "${CLOUD_PROVIDER_KIND_VERSION:-}" ]]; then
     doctor_ok "cloud-provider-kind pin ${CLOUD_PROVIDER_KIND_VERSION}"
   else
@@ -367,6 +382,28 @@ postgres_health() {
   docker exec fogstack-postgres pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" >/dev/null 2>&1
 }
 
+http_endpoint_alive() {
+  local url="$1"
+  local code
+  code="$(curl --max-time 5 -sS -o /dev/null -w '%{http_code}' "${url}" 2>/dev/null || true)"
+  [[ "${code}" =~ ^[0-9]{3}$ && "${code}" != "000" ]]
+}
+
+emulator_health() {
+  container_running fogstack-emulator || return 1
+  http_endpoint_alive "${AWS_ENDPOINT_URL}"
+}
+
+opensearch_health() {
+  container_running fogstack-opensearch || return 1
+  curl --max-time 5 -fsS "${OPENSEARCH_URL}/_cluster/health?wait_for_status=yellow&timeout=1s" >/dev/null
+}
+
+dashboards_health() {
+  container_running fogstack-dashboards || return 1
+  http_endpoint_alive "${DASHBOARDS_URL}/api/status"
+}
+
 container_state() {
   local name="$1"
   docker inspect -f '{{.State.Status}}' "${name}" 2>/dev/null || printf 'absent'
@@ -383,11 +420,6 @@ cmd_status() {
 
   parse_profile_args "$@"
   profile="${PARSED_PROFILE}"
-
-  if [[ "${profile}" == "full" ]]; then
-    printf 'profile full available in Phase 3\n' >&2
-    return 1
-  fi
 
   print_status_row "COMPONENT" "STATE" "ENDPOINT" "HEALTH"
 
@@ -416,6 +448,32 @@ cmd_status() {
     all_healthy=1
   fi
 
+  if [[ "${profile}" == "full" ]]; then
+    state="$(container_state fogstack-emulator)"
+    if emulator_health; then
+      print_status_row "emulator" "${state}" "${AWS_ENDPOINT_URL}" "healthy"
+    else
+      print_status_row "emulator" "${state}" "${AWS_ENDPOINT_URL}" "unhealthy"
+      all_healthy=1
+    fi
+
+    state="$(container_state fogstack-opensearch)"
+    if opensearch_health; then
+      print_status_row "opensearch" "${state}" "${OPENSEARCH_URL}" "healthy"
+    else
+      print_status_row "opensearch" "${state}" "${OPENSEARCH_URL}" "unhealthy"
+      all_healthy=1
+    fi
+
+    state="$(container_state fogstack-dashboards)"
+    if dashboards_health; then
+      print_status_row "dashboards" "${state}" "${DASHBOARDS_URL}" "healthy"
+    else
+      print_status_row "dashboards" "${state}" "${DASHBOARDS_URL}" "unhealthy"
+      all_healthy=1
+    fi
+  fi
+
   return "${all_healthy}"
 }
 
@@ -425,14 +483,15 @@ cmd_endpoints() {
   parse_profile_args "$@"
   profile="${PARSED_PROFILE}"
 
-  printf 'AWS_ENDPOINT_URL=%s\n' "${AWS_ENDPOINT_URL}"
   printf 'KUBECONFIG=%s\n' "${KUBECONFIG}"
   printf 'KUBE_CONTEXT=%s\n' "${CONTEXT}"
   printf 'REGISTRY=%s:%s\n' "${REGISTRY_HOST}" "${REGISTRY_PORT}"
   printf 'POSTGRES_URL=postgresql://%s:%s@%s:%s/%s\n' "${POSTGRES_USER}" "${POSTGRES_PASSWORD}" "${POSTGRES_HOST}" "${POSTGRES_PORT}" "${POSTGRES_DB}"
 
   if [[ "${profile}" == "full" ]]; then
+    printf 'AWS_ENDPOINT_URL=%s\n' "${AWS_ENDPOINT_URL}"
     printf 'OPENSEARCH_URL=%s\n' "${OPENSEARCH_URL}"
+    printf 'DASHBOARDS_URL=%s\n' "${DASHBOARDS_URL}"
   fi
 }
 
@@ -460,16 +519,18 @@ stop_cloud_provider_kind() {
     "${REPO_ROOT}/stack/scripts/stop-lb-provider.sh"
 }
 
+compose_up_for_profile() {
+  case "$1" in
+    minimal) docker_compose up -d --wait ;;
+    full) docker_compose --profile full up -d --wait ;;
+  esac
+}
+
 cmd_up() {
   local profile
 
   parse_profile_args "$@"
   profile="${PARSED_PROFILE}"
-
-  if [[ "${profile}" == "full" ]]; then
-    printf 'profile full available in Phase 3\n' >&2
-    return 1
-  fi
 
   cmd_doctor --profile "${profile}"
 
@@ -481,16 +542,44 @@ cmd_up() {
   else
     log "starting compose services"
   fi
-  docker_compose up -d --wait
+  compose_up_for_profile "${profile}"
 
   log "ensuring cloud-provider-kind"
   start_cloud_provider_kind
 
-  log "waiting for minimal profile health"
+  log "waiting for ${profile} profile health"
   wait_for_healthy "${profile}"
 
   printf '%s\n' "${profile}" > "${STATE_PROFILE_FILE}"
   cmd_endpoints --profile "${profile}"
+}
+
+render_tf_override() {
+  local target_file="$1"
+  local template
+  local content
+
+  template="${REPO_ROOT}/engine/templates/override.tf.tpl"
+  [[ -f "${template}" ]] || fail "missing Terraform override template: ${template}"
+
+  content="$(<"${template}")"
+  content="${content//__AWS_ENDPOINT_URL__/${AWS_ENDPOINT_URL}}"
+  content="${content//__AWS_REGION__/${AWS_DEFAULT_REGION:-us-east-1}}"
+  content="${content//__TF_PROVIDER_AWS_VERSION__/${TF_PROVIDER_AWS_VERSION:-~> 5.0}}"
+  printf '%s\n' "${content}" > "${target_file}"
+}
+
+cmd_tf_init() {
+  local target_dir
+  local target_file
+
+  [[ "$#" -eq 1 ]] || fail "usage: fog tf-init <dir>"
+  target_dir="$1"
+  target_file="${target_dir}/fogstack_override.tf"
+
+  install -d -m 755 "${target_dir}"
+  render_tf_override "${target_file}"
+  printf 'generated %s\n' "${target_file}"
 }
 
 terraform_destroy_sample_app() {
@@ -565,10 +654,10 @@ cmd_down() {
 
   if [[ "${remove_volumes}" == "true" ]]; then
     log "stopping compose services and removing volumes"
-    docker_compose down -v --remove-orphans || true
+    docker_compose --profile full down -v --remove-orphans || true
   else
     log "stopping compose services"
-    docker_compose down --remove-orphans || true
+    docker_compose --profile full down --remove-orphans || true
   fi
 
   log "removing registry container"
@@ -623,6 +712,7 @@ main() {
     status) cmd_status "$@" ;;
     endpoints) cmd_endpoints "$@" ;;
     doctor) cmd_doctor "$@" ;;
+    tf-init) cmd_tf_init "$@" ;;
     version) cmd_version "$@" ;;
     help|-h|--help) usage ;;
     *) fail "unknown command: ${command}" ;;

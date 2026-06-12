@@ -17,5 +17,80 @@ services:
       interval: 5s
       retries: 10
 
+  emulator:
+    image: ${EMULATOR_IMAGE:-floci/floci:1.5.24}
+    container_name: fogstack-emulator
+    profiles: ["full"]
+    user: "0"
+    environment:
+      FLOCI_SERVICES_DOCKER_NETWORK: kind
+      FLOCI_SERVICES_EKS_DOCKER_NETWORK: kind
+      FLOCI_SERVICES_RDS_PROXY_BASE_PORT: "7001"
+      FLOCI_HOSTNAME: fogstack-emulator
+      FLOCI_BASE_URL: http://fogstack-emulator:4566
+    ports:
+      - "127.0.0.1:4566:4566"
+      - "127.0.0.1:7001-7099:7001-7099"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - fogstack-emulator-data:/app/data
+    networks:
+      default: {}
+      kind:
+        aliases:
+          - fogstack-emulator
+
+  opensearch:
+    image: ${OPENSEARCH_IMAGE:-opensearchproject/opensearch:3.3.0}
+    container_name: fogstack-opensearch
+    profiles: ["full"]
+    environment:
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      DISABLE_SECURITY_PLUGIN: "true"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - fogstack-opensearch-data:/usr/share/opensearch/data
+      - ./config/opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro
+    networks:
+      default: {}
+      kind:
+        aliases:
+          - fogstack-opensearch
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  dashboards:
+    image: ${OPENSEARCH_DASHBOARDS_IMAGE:-opensearchproject/opensearch-dashboards:3.3.0}
+    container_name: fogstack-dashboards
+    profiles: ["full"]
+    environment:
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5601:5601"
+    volumes:
+      - ./config/opensearch-dashboards/opensearch_dashboards.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml:ro
+
 volumes:
   fogstack-pgdata: {}
+  fogstack-emulator-data: {}
+  fogstack-opensearch-data: {}
+
+networks:
+  kind:
+    external: true
+    name: kind
