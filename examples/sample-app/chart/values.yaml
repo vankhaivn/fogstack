@@ -1,0 +1,10 @@
+replicaCount: 1
+
+image:
+  repository: localhost:5001/sample-app
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: LoadBalancer
+  port: 80

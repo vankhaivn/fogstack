@@ -94,8 +94,8 @@ Terraform follows the production EKS pattern: **layer 1** provisions the cluster
 | Phase | Scope                                                     | Status       |
 | ----- | --------------------------------------------------------- | ------------ |
 | 0     | Evaluate & pin the AWS emulator (Floci vs MiniStack)      | ✅ done — Floci won 99/83 |
-| 1     | Minimal stack: kind + registry + postgres + Terraform e2e | 🔜 next up   |
-| 2     | `fog` CLI (up/down/status/endpoints/doctor)               | ⏳ pending   |
+| 1     | Minimal stack: kind + registry + postgres + Terraform e2e | ✅ done      |
+| 2     | `fog` CLI (up/down/status/endpoints/doctor)               | 🔜 next up   |
 | 3     | Full profile: emulator + Gateway API + OpenSearch         | ⏳ pending   |
 | 4     | Docs (runbook/playbook), toolbox image, CI                | ⏳ pending   |
 | 5     | VPC lab with real network enforcement                     | 💭 exploring |

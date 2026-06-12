@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sample-app
+  labels:
+    app.kubernetes.io/name: sample-app
+    app.kubernetes.io/managed-by: fogstack
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app.kubernetes.io/name: sample-app
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
