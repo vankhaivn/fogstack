@@ -14,7 +14,7 @@ One command (`fog up`) exposes a local AWS-shaped platform:
 
 | Endpoint                | Acts as                                     | Backed by                                                                                                         | Status     |
 | ----------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------- |
-| `http://localhost:4566` | AWS API (S3, SQS, IAM, Lambda, ...)         | MIT-licensed AWS emulator (Floci or MiniStack — under evaluation)                                                 | ⏳ pending |
+| `http://localhost:4566` | AWS API (S3, SQS, IAM, Lambda, ...)         | [Floci](https://github.com/floci-io/floci) (MIT) — pinned, chosen via head-to-head eval                                                 | ⏳ pending |
 | dedicated kubeconfig    | EKS — real Kubernetes, `helm install` works | [kind](https://kind.sigs.k8s.io/) + [cloud-provider-kind](https://github.com/kubernetes-sigs/cloud-provider-kind) | ⏳ pending |
 | `localhost:5001`        | ECR — real `docker push`/`pull`             | registry:2                                                                                                        | ⏳ pending |
 | `localhost:5432`        | RDS — real PostgreSQL                       | postgres:16                                                                                                       | ⏳ pending |
@@ -93,8 +93,8 @@ Terraform follows the production EKS pattern: **layer 1** provisions the cluster
 
 | Phase | Scope                                                     | Status       |
 | ----- | --------------------------------------------------------- | ------------ |
-| 0     | Evaluate & pin the AWS emulator (Floci vs MiniStack)      | 🔜 next up   |
-| 1     | Minimal stack: kind + registry + postgres + Terraform e2e | ⏳ pending   |
+| 0     | Evaluate & pin the AWS emulator (Floci vs MiniStack)      | ✅ done — Floci won 99/83 |
+| 1     | Minimal stack: kind + registry + postgres + Terraform e2e | 🔜 next up   |
 | 2     | `fog` CLI (up/down/status/endpoints/doctor)               | ⏳ pending   |
 | 3     | Full profile: emulator + Gateway API + OpenSearch         | ⏳ pending   |
 | 4     | Docs (runbook/playbook), toolbox image, CI                | ⏳ pending   |

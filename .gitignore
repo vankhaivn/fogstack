@@ -1,6 +1,11 @@
 # Internal: brainstorm, spec, research, roadmap, ADR, evidence
 internal/
 
+# Local agent docs and memory
+/.agents/
+/.codex/
+/AGENTS.md
+
 # Secrets & local state
 .env
 .state/
