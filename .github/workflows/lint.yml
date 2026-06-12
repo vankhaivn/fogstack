@@ -1,0 +1,52 @@
+name: lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Build toolbox
+        run: |
+          set -euo pipefail
+          docker build \
+            -t fogstack-toolbox:lint \
+            -f toolbox/Dockerfile \
+            --build-arg TERRAFORM_VERSION="$(awk -F= '$1=="TERRAFORM_VERSION"{print $2}' versions.env)" \
+            --build-arg KUBECTL_CLIENT_VERSION="$(awk -F= '$1=="KUBECTL_CLIENT_VERSION"{print $2}' versions.env)" \
+            --build-arg HELM_VERSION="$(awk -F= '$1=="HELM_VERSION"{print $2}' versions.env)" \
+            --build-arg KIND_VERSION="$(awk -F= '$1=="KIND_VERSION"{print $2}' versions.env)" \
+            --build-arg AWS_CLI_VERSION="$(awk -F= '$1=="AWS_CLI_VERSION"{print $2}' versions.env)" \
+            --build-arg DOCKER_CLI_VERSION="$(awk -F= '$1=="DOCKER_SERVER_VERSION"{print $2}' versions.env)" \
+            --build-arg SHELLCHECK_VERSION="$(awk -F= '$1=="SHELLCHECK_VERSION"{print $2}' versions.env)" \
+            --build-arg HADOLINT_VERSION="$(awk -F= '$1=="HADOLINT_VERSION"{print $2}' versions.env)" \
+            --build-arg POSTGRES_CLIENT_MAJOR="$(awk -F= '$1=="POSTGRES_CLIENT_MAJOR"{print $2}' versions.env)" \
+            .
+
+      - name: Static checks
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work \
+            fogstack-toolbox:lint \
+            bash -lc '
+              set -euo pipefail
+              shellcheck engine/fog engine/fog-toolbox engine/lib/*.sh stack/scripts/*.sh checks/*.sh
+              terraform fmt -check -recursive terraform
+              for dir in terraform/layer1-cluster terraform/layer2-apps; do
+                terraform -chdir="$dir" init -backend=false -input=false
+                terraform -chdir="$dir" validate
+              done
+              hadolint examples/sample-app/Dockerfile toolbox/Dockerfile
+            '
+
+      - name: Local runtime note
+        run: |
+          printf '%s\n' 'Runtime smoke is intentionally local-only; run checks/smoke.sh on a Docker Desktop machine.'

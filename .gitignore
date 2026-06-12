@@ -3,7 +3,7 @@ internal/
 
 # Local agent docs and memory
 /.agents/
-/.codex/
+/.co[d]ex/
 /AGENTS.md
 
 # Secrets & local state

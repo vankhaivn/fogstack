@@ -1,109 +1,179 @@
 # fogstack
 
-> **Fog**: the cloud, at ground level. ☁️→💻
->
-> An AWS-compatible local cloud stack — EKS, RDS, ECR, S3, SQS and friends running on your laptop, for **$0**. Point your Terraform, Helm, and SDKs at `localhost` and build like you're on AWS, without the bill.
+fogstack is a local AWS endpoint platform for personal projects. It starts a
+repo-local Kubernetes cluster, registry, Postgres database, and optional
+AWS-compatible services so an application can be pointed at local endpoints
+without touching company kube contexts or real AWS credentials.
 
-> [!WARNING]
-> 🚧 **Status: under active development — not usable yet.**
-> The architecture is settled and construction is in progress (see [Roadmap status](#roadmap-status)). Nothing below works until the corresponding phase lands. Star/watch the repo if you want to follow along.
+## Endpoint Contract
 
-## What you get
+| Endpoint | Profile | Role | Backend |
+|---|---|---|---|
+| `KUBECONFIG=<repo>/.state/kubeconfig.yaml` | minimal, full | EKS-like Kubernetes target | kind + cloud-provider-kind |
+| `localhost:5001` | minimal, full | ECR-like image registry | registry |
+| `localhost:5432` | minimal, full | RDS-like Postgres | postgres |
+| `http://localhost:4566` | full | AWS API surface for S3, SQS, IAM, Lambda, and related services | Floci |
+| `http://localhost:9200` | full | OpenSearch API | OpenSearch |
+| `http://localhost:5601` | full | OpenSearch Dashboards | OpenSearch Dashboards |
 
-One command (`fog up`) exposes a local AWS-shaped platform:
+Every command guards the host first: Kubernetes writes to `.state/kubeconfig.yaml`,
+AWS config files point at `.state/`, and fake local credentials are exported for
+the process. The stack never needs `~/.kube` or `~/.aws`.
 
-| Endpoint                | Acts as                                     | Backed by                                                                                                         | Status     |
-| ----------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------- |
-| `http://localhost:4566` | AWS API (S3, SQS, IAM, Lambda, ...)         | [Floci](https://github.com/floci-io/floci) (MIT) — pinned, chosen via head-to-head eval                                                 | ⏳ pending |
-| dedicated kubeconfig    | EKS — real Kubernetes, `helm install` works | [kind](https://kind.sigs.k8s.io/) + [cloud-provider-kind](https://github.com/kubernetes-sigs/cloud-provider-kind) | ⏳ pending |
-| `localhost:5001`        | ECR — real `docker push`/`pull`             | registry:2                                                                                                        | ⏳ pending |
-| `localhost:5432`        | RDS — real PostgreSQL                       | postgres:16                                                                                                       | ⏳ pending |
-| `localhost:9200`        | OpenSearch / "ELK"                          | OpenSearch 3.x (`full` profile)                                                                                   | ⏳ pending |
+## Quickstart
 
-Your projects connect like they would to real AWS: `AWS_ENDPOINT_URL` for SDKs, generated provider override for Terraform, plain kubeconfig for kubectl/Helm.
-
-## Why
-
-Learning AWS infrastructure (Terraform + EKS + RDS + observability) on a real account is expensive and slow to iterate on. Free tiers don't cover EKS control planes or NAT gateways, and one forgotten cluster ruins your month. fogstack assembles proven open-source pieces into one orchestrated, disposable, laptop-sized stack:
-
-- **Real where it matters** — the Kubernetes cluster, database, registry, and search engine are the real thing, not mocks. Helm charts and `kubectl` workflows transfer 1:1 to EKS.
-- **AWS-shaped where it helps** — the emulator speaks the AWS wire protocol on port 4566, so `aws` CLI, SDKs, and the Terraform AWS provider work unmodified.
-- **Disposable** — everything runs in containers with a `fogstack-` prefix. `fog down --volumes` removes every trace.
-- **Isolated by design** — fogstack never touches your `~/.kube/config` or `~/.aws/*`. It uses its own kubeconfig and fake credentials in a repo-local `.state/` directory, so existing work/company contexts stay untouched.
-
-## Quickstart — ⏳ pending (target UX)
-
-This is the experience we are building toward (lands with the CLI phase):
+Prerequisites: Docker Desktop with at least 8 GB assigned to the Docker VM, plus
+host binaries for `kind`, `kubectl`, `helm`, `terraform`, and `curl`. The toolbox
+image provides pinned client tools for repeatable checks, but the main stack
+commands currently run on the host.
 
 ```bash
-git clone https://github.com/<you>/fogstack && cd fogstack
+git clone <repo-url> fogstack
+cd fogstack
 cp .env.example .env
-./engine/fog up                      # minimal profile: k8s + registry + postgres
+./engine/fog doctor
+./engine/fog up
 eval "$(./engine/fog endpoints)"
-
-aws --endpoint-url "$AWS_ENDPOINT_URL" s3 mb s3://hello   # AWS API, locally
-kubectl get nodes                                          # your local "EKS"
+kubectl --kubeconfig "$KUBECONFIG" --context "$KUBE_CONTEXT" get nodes
+./engine/fog status
 ```
 
-**Requirements:** macOS (Apple Silicon tested), Docker Desktop with ~8 GB allocated. ~16 GB machine RAM recommended.
+Optional self-test:
+
+```bash
+checks/smoke.sh
+```
+
+For an AWS API demo, use the full profile:
+
+```bash
+./engine/fog up --profile full
+eval "$(./engine/fog endpoints --profile full)"
+aws --endpoint-url "$AWS_ENDPOINT_URL" s3 ls
+```
 
 ## Profiles
 
-| Profile   | Components                                                     | ~RAM (containers) | Status     |
-| --------- | -------------------------------------------------------------- | ----------------- | ---------- |
-| `minimal` | kind (3 nodes) + registry + postgres                           | ~1.5–2 GB         | ⏳ pending |
-| `full`    | minimal + AWS emulator + OpenSearch + Dashboards + Gateway API | ~3.5–5 GB         | ⏳ pending |
+| Profile | Starts | Suggested Docker VM memory | Use it when |
+|---|---|---:|---|
+| `minimal` | kind, local registry, Postgres, sample app plumbing | 8 GB | You need Kubernetes, images, and Postgres quickly. |
+| `full` | everything in `minimal`, plus Floci, OpenSearch, Dashboards, Gateway API routing, and log shipping | 8 GB minimum, more is smoother | You need AWS-compatible APIs or observability. |
 
-## Use it with your project — ⏳ pending
+`fog up` defaults to `minimal`. Use `--profile full` only when your project needs
+the AWS-compatible endpoint or OpenSearch.
 
-- **Terraform**: `fog tf-init <dir>` generates a provider override pointing every AWS service endpoint at `localhost:4566`. Same `.tf` code, local or real cloud.
-- **Any AWS SDK / CLI**: set `AWS_ENDPOINT_URL=http://localhost:4566` (credentials `test`/`test`).
-- **Helm / kubectl**: use the kubeconfig from `fog endpoints` — it's a normal multi-node Kubernetes cluster with working `LoadBalancer` services and Gateway API.
-- **psql / your app**: standard PostgreSQL connection string from `fog endpoints`.
+## Use With Your Project
 
-## Honest limitations
+Run this in your shell after the stack is healthy:
 
-fogstack is a **learning and local-dev tool**, not a production-parity test environment:
+```bash
+eval "$(./engine/fog endpoints)"
+```
 
-- **VPC / Security Groups are API-only.** No local emulator (including paid ones) enforces network semantics — you can `terraform apply` a VPC and learn the workflow, but packets don't obey route tables. For real VPC behavior, use a real (free-component) VPC on AWS.
-- **IAM is not actually evaluated.** Roles and policies exist as API objects; nothing enforces them.
-- The AWS emulator layer is young (the post-LocalStack-archival generation, 2026). Expect rough edges; we pin exact versions.
-- Not a load-testing or performance environment.
+Terraform: generate a local provider override for a scratch directory:
+
+```bash
+./engine/fog tf-init path/to/terraform
+```
+
+SDKs and AWS CLI: always pass the endpoint explicitly. Example:
+
+```bash
+aws --endpoint-url "$AWS_ENDPOINT_URL" s3 ls
+```
+
+Kubernetes and Helm: use the repo-local kubeconfig and context:
+
+```bash
+kubectl --kubeconfig "$KUBECONFIG" --context "$KUBE_CONTEXT" get pods -A
+helm --kubeconfig "$KUBECONFIG" --kube-context "$KUBE_CONTEXT" list -A
+```
+
+Postgres:
+
+```bash
+psql "$POSTGRES_URL"
+```
+
+Registry:
+
+```bash
+docker build -t "$REGISTRY/my-app:dev" .
+docker push "$REGISTRY/my-app:dev"
+```
+
+Pinned toolbox:
+
+```bash
+./engine/fog-toolbox --build
+./engine/fog-toolbox terraform version
+```
+
+## Limits
+
+VPC and security-group APIs are useful for create/read/update/delete workflows,
+but they do not enforce real network policy. IAM accepts local development flows,
+but it is not a real authorization boundary. The AWS-compatible emulator is young
+software and can change faster than AWS itself.
+
+Do not use fogstack as a production-parity test environment. It is for local
+development feedback, integration wiring, and learning the shape of AWS-adjacent
+workflows before spending cloud money.
 
 ## Architecture
 
+```text
+host shell
+  |
+  | eval "$(engine/fog endpoints)"
+  v
+.state/kubeconfig.yaml       localhost:5001        localhost:5432
+      |                            |                    |
+      v                            v                    v
+   kind cluster  <-------- local registry -------->  Postgres
+      |
+      +-- sample app, Gateway API, cloud-provider-kind
+      |
+      +-- full profile service aliases
+              |                  |
+              v                  v
+        Floci AWS API       OpenSearch
 ```
-                       ┌──────────────  fog CLI  ──────────────┐
-                       │   up · down · status · endpoints      │
-                       └──┬─────────────--─┬──────────────┬────┘
-        AWS-shaped APIs   │   real compute │              │ observability (full)
-   ┌──────────────────────▼──┐  ┌──────────▼───────────┐  ┌─▼──────────────────┐
-   │ emulator :4566          │  │ kind ("EKS")         │  │ OpenSearch :9200   │
-   │ S3·SQS·IAM·Lambda·...   │  │ + cloud-provider-kind│  │ + Dashboards :5601 │
-   └─────────────────────────┘  │ + Gateway API        │  └────────────────────┘
-   ┌─────────────────────────┐  │ registry :5001 (ECR) │
-   │ postgres :5432 ("RDS")  │  └──────────────────────┘
-   └─────────────────────────┘
-        all containers · prefix fogstack- · Docker Desktop VM (~8 GB)
+
+`engine/fog down --volumes` removes stack containers, the kind cluster, local
+volumes, and fogstack-owned load balancer containers.
+
+## Troubleshooting
+
+Port already in use: run `./engine/fog doctor`. If a fogstack container owns the
+port, startup can continue; if another process owns it, stop that process or
+change the relevant port in `.env`.
+
+Docker memory too small: increase Docker Desktop memory to at least 8 GB and
+rerun `./engine/fog doctor`.
+
+Cluster not ready: run `./engine/fog down --volumes`, then `./engine/fog up`
+again. If it still fails, check `docker ps` and `kind get clusters`.
+
+No load balancer endpoint: wait one more minute, then inspect the cloud provider
+container with `docker logs fogstack-cloud-provider-kind`.
+
+Full profile endpoint missing: confirm you started with `./engine/fog up
+--profile full` and evaluated `./engine/fog endpoints --profile full`.
+
+Uninstall:
+
+```bash
+./engine/fog down --volumes
+rm -rf .state
+docker image rm "fogstack-toolbox:$(awk -F= '$1==\"FOGSTACK_VERSION\"{print $2}' versions.env)" 2>/dev/null || true
 ```
 
-Terraform follows the production EKS pattern: **layer 1** provisions the cluster, **layer 2** (`kubernetes` + `helm` providers) manages everything in-cluster — layer 2 code is copy-paste portable to a real EKS cluster.
+## License And Credits
 
-## Roadmap status
+fogstack is released under the MIT License. See [LICENSE](LICENSE).
 
-| Phase | Scope                                                     | Status       |
-| ----- | --------------------------------------------------------- | ------------ |
-| 0     | Evaluate & pin the AWS emulator (Floci vs MiniStack)      | ✅ done — Floci won 99/83 |
-| 1     | Minimal stack: kind + registry + postgres + Terraform e2e | ✅ done      |
-| 2     | `fog` CLI (up/down/status/endpoints/doctor)               | ✅ done      |
-| 3     | Full profile: emulator + Gateway API + OpenSearch         | ✅ done      |
-| 4     | Docs (runbook/playbook), toolbox image, CI                | 🔜 next up   |
-| 5     | VPC lab with real network enforcement                     | 💭 exploring |
-
-Docs for end users (runbook, troubleshooting playbook, connect-your-project guide) will live in [`docs/`](docs/) — ⏳ pending, written in Phase 4.
-
-## License & credits
-
-MIT (license file lands with Phase 4).
-
-Standing on the shoulders of: [kind](https://kind.sigs.k8s.io/) · [cloud-provider-kind](https://github.com/kubernetes-sigs/cloud-provider-kind) · [Floci](https://github.com/floci-io/floci) / [MiniStack](https://github.com/ministackorg/ministack) · [Envoy Gateway](https://gateway.envoyproxy.io/) · [OpenSearch](https://opensearch.org/) · [PostgreSQL](https://www.postgresql.org/) · [Terraform](https://www.terraform.io/) · [Helm](https://helm.sh/)
+Credits: Floci for the AWS-compatible API backend, kind for local Kubernetes,
+cloud-provider-kind for local load balancer behavior, Envoy Gateway for Gateway
+API routing, OpenSearch for local search/log inspection, PostgreSQL, Terraform,
+Helm, kubectl, Docker, ShellCheck, and Hadolint.

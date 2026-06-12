@@ -26,7 +26,7 @@ locals {
   aws_cli_image               = "amazon/aws-cli:2.34.20"
   aws_api_endpoint_in_cluster = "http://aws-api.fogstack.svc.cluster.local:4566"
   opensearch_host_in_cluster  = "opensearch.fogstack.svc.cluster.local"
-  incluster_bucket_name       = "fogstack-incluster-phase3"
+  incluster_bucket_name       = "fogstack-incluster-demo"
 }
 
 provider "kubernetes" {

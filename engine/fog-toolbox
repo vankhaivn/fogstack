@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+export REPO_ROOT
+
+set -a
+# shellcheck disable=SC1091
+source "${REPO_ROOT}/versions.env"
+set +a
+
+IMAGE="${FOGSTACK_TOOLBOX_IMAGE:-fogstack-toolbox:${FOGSTACK_VERSION}}"
+DOCKER_CLI_VERSION="${DOCKER_CLI_VERSION:-${DOCKER_SERVER_VERSION}}"
+
+build_toolbox() {
+  docker build \
+    -t "${IMAGE}" \
+    -f "${REPO_ROOT}/toolbox/Dockerfile" \
+    --build-arg "TOOLBOX_BASE_IMAGE=${TOOLBOX_BASE_IMAGE}" \
+    --build-arg "TERRAFORM_VERSION=${TERRAFORM_VERSION}" \
+    --build-arg "KUBECTL_CLIENT_VERSION=${KUBECTL_CLIENT_VERSION}" \
+    --build-arg "HELM_VERSION=${HELM_VERSION}" \
+    --build-arg "KIND_VERSION=${KIND_VERSION}" \
+    --build-arg "AWS_CLI_VERSION=${AWS_CLI_VERSION}" \
+    --build-arg "DOCKER_CLI_VERSION=${DOCKER_CLI_VERSION}" \
+    --build-arg "POSTGRES_CLIENT_MAJOR=${POSTGRES_CLIENT_MAJOR}" \
+    --build-arg "SHELLCHECK_VERSION=${SHELLCHECK_VERSION}" \
+    --build-arg "HADOLINT_VERSION=${HADOLINT_VERSION}" \
+    "${REPO_ROOT}"
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  fog-toolbox [--build] [--image IMAGE] [--] [command...]
+
+Examples:
+  engine/fog-toolbox --build
+  engine/fog-toolbox terraform version
+  engine/fog-toolbox bash
+EOF
+}
+
+build=false
+while (($# > 0)); do
+  case "$1" in
+    --build)
+      build=true
+      shift
+      ;;
+    --image)
+      [[ $# -ge 2 ]] || {
+        printf 'fog-toolbox: --image requires a value\n' >&2
+        exit 1
+      }
+      IMAGE="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [[ "${build}" == "true" ]] || ! docker image inspect "${IMAGE}" >/dev/null 2>&1; then
+  build_toolbox
+fi
+
+if [[ "$#" -eq 0 ]]; then
+  set -- bash
+fi
+
+if [[ -t 0 && -t 1 ]]; then
+  docker run --rm -it \
+    --name "fogstack-toolbox-$$" \
+    --add-host host.docker.internal:host-gateway \
+    -e FOG_IN_TOOLBOX=1 \
+    -e HOME=/tmp/fogstack-home \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "${REPO_ROOT}:/workspace" \
+    -w /workspace \
+    "${IMAGE}" \
+    "$@"
+else
+  docker run --rm \
+    --name "fogstack-toolbox-$$" \
+    --add-host host.docker.internal:host-gateway \
+    -e FOG_IN_TOOLBOX=1 \
+    -e HOME=/tmp/fogstack-home \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "${REPO_ROOT}:/workspace" \
+    -w /workspace \
+    "${IMAGE}" \
+    "$@"
+fi

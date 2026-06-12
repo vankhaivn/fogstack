@@ -13,7 +13,7 @@ set -a
 source "${REPO_ROOT}/versions.env"
 set +a
 
-EVIDENCE_DIR="${FOGSTACK_CPK_EVIDENCE_DIR:-${REPO_ROOT}/internal/evidence/phase-1}"
+EVIDENCE_DIR="${FOGSTACK_CPK_EVIDENCE_DIR:-${REPO_ROOT}/internal/evidence/cloud-provider-kind}"
 PID_FILE="${FOGSTACK_CPK_PID_FILE:-${REPO_ROOT}/.state/cloud-provider-kind.pid}"
 LOG_FILE="${FOGSTACK_CPK_LOG_FILE:-${EVIDENCE_DIR}/cloud-provider-kind.log}"
 CONTAINER_NAME="fogstack-cloud-provider-kind"
