@@ -1,0 +1,632 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# shellcheck disable=SC1091
+source "${BASH_SOURCE[0]%/*}/lib/env-guard.sh"
+
+on_error() {
+  local rc="$?"
+  printf '[fogstack] error at line %s (exit %s)\n' "${BASH_LINENO[0]}" "${rc}" >&2
+  exit "${rc}"
+}
+
+trap on_error ERR
+
+set -a
+# shellcheck disable=SC1091
+source "${REPO_ROOT}/versions.env"
+set +a
+
+dotenv_file() {
+  if [[ -n "${FOGSTACK_ENV_FILE:-}" ]]; then
+    printf '%s\n' "${FOGSTACK_ENV_FILE}"
+    return 0
+  fi
+
+  printf '%s\n' "${REPO_ROOT}/.env"
+}
+
+DOTENV_FILE="$(dotenv_file)"
+if [[ -f "${DOTENV_FILE}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${DOTENV_FILE}"
+  set +a
+fi
+
+# Re-assert host isolation after local env defaults are loaded.
+# shellcheck disable=SC1091
+source "${BASH_SOURCE[0]%/*}/lib/env-guard.sh"
+
+CLUSTER_NAME="${CLUSTER_NAME:-fogstack}"
+CONTEXT="${KUBE_CONTEXT:-kind-${CLUSTER_NAME}}"
+REGISTRY_NAME="${REGISTRY_NAME:-fogstack-registry}"
+REGISTRY_HOST="${REGISTRY_HOST:-localhost}"
+REGISTRY_PORT="${REGISTRY_PORT:-5001}"
+POSTGRES_HOST="${POSTGRES_HOST:-localhost}"
+POSTGRES_PORT="${POSTGRES_PORT:-5432}"
+POSTGRES_USER="${POSTGRES_USER:-fogstack}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-test}"
+POSTGRES_DB="${POSTGRES_DB:-appdb}"
+AWS_ENDPOINT_URL="${AWS_ENDPOINT_URL:-http://localhost:4566}"
+OPENSEARCH_URL="${OPENSEARCH_URL:-http://localhost:9200}"
+FOGSTACK_VERSION="${FOGSTACK_VERSION:-0.2.0-phase2}"
+STATE_PROFILE_FILE="${REPO_ROOT}/.state/profile"
+CPK_PID_FILE="${FOGSTACK_CPK_PID_FILE:-/tmp/fogstack-cpk.pid}"
+CPK_LOG_FILE="${FOGSTACK_CPK_LOG_FILE:-/tmp/fogstack-cpk.log}"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  fog up [--profile minimal|full] [--verbose]
+  fog down [--volumes] [--verbose]
+  fog status [--profile minimal|full]
+  fog endpoints [--profile minimal|full]
+  fog doctor [--profile minimal|full]
+  fog version
+EOF
+}
+
+log() {
+  printf '[fogstack] %s\n' "$*"
+}
+
+fail() {
+  printf '[fogstack] %s\n' "$*" >&2
+  exit 1
+}
+
+compose_env_file() {
+  if [[ -n "${FOGSTACK_ENV_FILE:-}" && -f "${FOGSTACK_ENV_FILE}" ]]; then
+    printf '%s\n' "${FOGSTACK_ENV_FILE}"
+    return 0
+  fi
+
+  if [[ -f "${REPO_ROOT}/.env" ]]; then
+    printf '%s\n' "${REPO_ROOT}/.env"
+    return 0
+  fi
+
+  printf '%s\n' "${REPO_ROOT}/.env.example"
+}
+
+docker_compose() {
+  local env_file
+  env_file="$(compose_env_file)"
+  docker compose --env-file "${env_file}" -f "${REPO_ROOT}/stack/compose.yaml" "$@"
+}
+
+require_profile() {
+  case "$1" in
+    minimal|full) ;;
+    *) fail "unknown profile: $1" ;;
+  esac
+}
+
+PARSED_PROFILE="minimal"
+parse_profile_args() {
+  PARSED_PROFILE="minimal"
+  while (($# > 0)); do
+    case "$1" in
+      --profile)
+        [[ $# -ge 2 ]] || fail "--profile requires a value"
+        PARSED_PROFILE="$2"
+        shift 2
+        ;;
+      --profile=*)
+        PARSED_PROFILE="${1#*=}"
+        shift
+        ;;
+      --verbose)
+        set -x
+        shift
+        ;;
+      *)
+        fail "unknown option: $1"
+        ;;
+    esac
+  done
+  require_profile "${PARSED_PROFILE}"
+}
+
+profile_ports() {
+  case "$1" in
+    minimal) printf '%s\n' "${REGISTRY_PORT}" "${POSTGRES_PORT}" ;;
+    full) printf '%s\n' 4566 "${REGISTRY_PORT}" "${POSTGRES_PORT}" 9200 ;;
+  esac
+}
+
+expected_port_owner() {
+  case "$1" in
+    4566) printf '%s\n' 'fogstack-emulator' ;;
+    "${REGISTRY_PORT}") printf '%s\n' "${REGISTRY_NAME}" ;;
+    "${POSTGRES_PORT}") printf '%s\n' 'fogstack-postgres' ;;
+    9200) printf '%s\n' 'fogstack-opensearch' ;;
+    *) printf '%s\n' '' ;;
+  esac
+}
+
+container_running() {
+  local name="$1"
+  local running
+  running="$(docker inspect -f '{{.State.Running}}' "${name}" 2>/dev/null || true)"
+  [[ "${running}" == "true" ]]
+}
+
+port_owned_by_container() {
+  local port="$1"
+  local name="$2"
+
+  [[ -n "${name}" ]] || return 1
+  container_running "${name}" || return 1
+  docker port "${name}" 2>/dev/null | grep -Eq "(:|127\\.0\\.0\\.1:)${port}$"
+}
+
+doctor_failed=0
+doctor_ok() {
+  printf '[OK] %s\n' "$*"
+}
+
+doctor_fail() {
+  printf '[FAIL] %s\n' "$*"
+  doctor_failed=1
+}
+
+check_cmd() {
+  local cmd="$1"
+  if command -v "${cmd}" >/dev/null 2>&1; then
+    doctor_ok "command ${cmd} found"
+  else
+    doctor_fail "command ${cmd} missing"
+  fi
+}
+
+check_pin() {
+  local label="$1"
+  local expected="$2"
+  local actual="$3"
+
+  if [[ -z "${expected}" ]]; then
+    doctor_fail "${label} version pin missing"
+    return 0
+  fi
+
+  if [[ -z "${actual}" ]]; then
+    doctor_fail "${label} version unavailable"
+    return 0
+  fi
+
+  if [[ "${actual}" == "${expected}" ]]; then
+    doctor_ok "${label} version ${actual}"
+  else
+    doctor_ok "${label} version ${actual} (expected ${expected}; warning: version drift)"
+  fi
+}
+
+docker_server_version() {
+  docker version --format '{{.Server.Version}}' 2>/dev/null || true
+}
+
+docker_compose_version() {
+  docker compose version --short 2>/dev/null || true
+}
+
+kind_cli_version() {
+  kind version 2>/dev/null | awk '{print $2}' || true
+}
+
+kubectl_client_version() {
+  kubectl version --client=true 2>/dev/null | awk '/Client Version:/ {print $3; exit}' || true
+}
+
+helm_cli_version() {
+  helm version --short 2>/dev/null | sed 's/+.*//' || true
+}
+
+terraform_cli_version() {
+  terraform version -json 2>/dev/null | awk -F'"' '/terraform_version/ {print $4; exit}' || true
+}
+
+shellcheck_cli_version() {
+  shellcheck --version 2>/dev/null | awk '/^version:/ {print $2; exit}' || true
+}
+
+check_port() {
+  local port="$1"
+  local owner
+  owner="$(expected_port_owner "${port}")"
+
+  if ! command -v lsof >/dev/null 2>&1; then
+    doctor_ok "port ${port} check skipped; lsof unavailable"
+    return 0
+  fi
+
+  if ! lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1; then
+    doctor_ok "port ${port} free"
+    return 0
+  fi
+
+  if port_owned_by_container "${port}" "${owner}"; then
+    doctor_ok "port ${port} already owned by ${owner}"
+    return 0
+  fi
+
+  doctor_fail "port ${port} is already in use by a non-fogstack process"
+}
+
+check_isolation() {
+  if [[ -d "${REPO_ROOT}/.state" ]]; then
+    doctor_ok ".state exists"
+  else
+    doctor_fail ".state missing"
+  fi
+
+  if [[ "${KUBECONFIG}" == "${REPO_ROOT}/.state/kubeconfig.yaml" ]]; then
+    doctor_ok "KUBECONFIG points to .state"
+  else
+    doctor_fail "KUBECONFIG is not repo-local"
+  fi
+
+  if [[ "${AWS_CONFIG_FILE}" == "${REPO_ROOT}/.state/aws-config" ]]; then
+    doctor_ok "AWS_CONFIG_FILE points to .state"
+  else
+    doctor_fail "AWS_CONFIG_FILE is not repo-local"
+  fi
+
+  if [[ "${AWS_SHARED_CREDENTIALS_FILE}" == "${REPO_ROOT}/.state/aws-credentials" ]]; then
+    doctor_ok "AWS_SHARED_CREDENTIALS_FILE points to .state"
+  else
+    doctor_fail "AWS_SHARED_CREDENTIALS_FILE is not repo-local"
+  fi
+
+  if [[ -z "${AWS_PROFILE:-}" ]]; then
+    doctor_ok "AWS_PROFILE unset"
+  else
+    doctor_fail "AWS_PROFILE must be unset"
+  fi
+}
+
+cmd_doctor() {
+  local profile
+  local mem_total
+  local port
+
+  parse_profile_args "$@"
+  profile="${PARSED_PROFILE}"
+  doctor_failed=0
+
+  if docker info >/dev/null 2>&1; then
+    doctor_ok "docker daemon running"
+  else
+    doctor_fail "docker daemon not reachable"
+  fi
+
+  mem_total="$(docker info --format '{{.MemTotal}}' 2>/dev/null || true)"
+  if [[ "${mem_total}" =~ ^[0-9]+$ && "${mem_total}" -ge 7516192768 ]]; then
+    doctor_ok "Docker VM memory ${mem_total} bytes"
+  else
+    doctor_fail "Docker VM memory must be at least 7GB"
+  fi
+
+  check_cmd docker
+  check_cmd kind
+  check_cmd kubectl
+  check_cmd helm
+  check_cmd terraform
+  check_cmd cloud-provider-kind
+  check_cmd shellcheck
+
+  check_pin "docker" "${DOCKER_SERVER_VERSION:-}" "$(docker_server_version)"
+  check_pin "docker compose" "${DOCKER_COMPOSE_VERSION:-}" "$(docker_compose_version)"
+  check_pin "kind" "${KIND_VERSION:-}" "$(kind_cli_version)"
+  check_pin "kubectl" "${KUBECTL_CLIENT_VERSION:-}" "$(kubectl_client_version)"
+  check_pin "helm" "${HELM_VERSION:-}" "$(helm_cli_version)"
+  check_pin "terraform" "${TERRAFORM_VERSION:-}" "$(terraform_cli_version)"
+  check_pin "shellcheck" "${SHELLCHECK_VERSION:-}" "$(shellcheck_cli_version)"
+  if [[ -n "${CLOUD_PROVIDER_KIND_VERSION:-}" ]]; then
+    doctor_ok "cloud-provider-kind pin ${CLOUD_PROVIDER_KIND_VERSION}"
+  else
+    doctor_fail "cloud-provider-kind pin missing"
+  fi
+
+  while IFS= read -r port; do
+    check_port "${port}"
+  done < <(profile_ports "${profile}")
+
+  check_isolation
+
+  if [[ "${doctor_failed}" -ne 0 ]]; then
+    return 2
+  fi
+}
+
+kind_cluster_exists() {
+  kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"
+}
+
+kind_health() {
+  local nodes
+  local total_count
+  local ready_count
+
+  kind_cluster_exists || return 1
+  nodes="$(kubectl --context "${CONTEXT}" get nodes --no-headers 2>/dev/null || true)"
+  [[ -n "${nodes}" ]] || return 1
+  total_count="$(printf '%s\n' "${nodes}" | wc -l | tr -d ' ')"
+  ready_count="$(printf '%s\n' "${nodes}" | awk '$2 ~ /Ready/ {count++} END {print count + 0}')"
+  [[ "${total_count}" == "3" && "${ready_count}" == "3" ]]
+}
+
+registry_health() {
+  container_running "${REGISTRY_NAME}" || return 1
+  curl --max-time 3 -fsS "http://${REGISTRY_HOST}:${REGISTRY_PORT}/v2/" >/dev/null
+}
+
+postgres_health() {
+  container_running fogstack-postgres || return 1
+  docker exec fogstack-postgres pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" >/dev/null 2>&1
+}
+
+container_state() {
+  local name="$1"
+  docker inspect -f '{{.State.Status}}' "${name}" 2>/dev/null || printf 'absent'
+}
+
+print_status_row() {
+  printf '%s | %s | %s | %s\n' "$1" "$2" "$3" "$4"
+}
+
+cmd_status() {
+  local profile
+  local all_healthy=0
+  local state
+
+  parse_profile_args "$@"
+  profile="${PARSED_PROFILE}"
+
+  if [[ "${profile}" == "full" ]]; then
+    printf 'profile full available in Phase 3\n' >&2
+    return 1
+  fi
+
+  print_status_row "COMPONENT" "STATE" "ENDPOINT" "HEALTH"
+
+  if kind_health; then
+    print_status_row "kind" "running" "${KUBECONFIG}#${CONTEXT}" "healthy"
+  else
+    state="absent"
+    kind_cluster_exists && state="degraded"
+    print_status_row "kind" "${state}" "${KUBECONFIG}#${CONTEXT}" "unhealthy"
+    all_healthy=1
+  fi
+
+  state="$(container_state "${REGISTRY_NAME}")"
+  if registry_health; then
+    print_status_row "registry" "${state}" "${REGISTRY_HOST}:${REGISTRY_PORT}" "healthy"
+  else
+    print_status_row "registry" "${state}" "${REGISTRY_HOST}:${REGISTRY_PORT}" "unhealthy"
+    all_healthy=1
+  fi
+
+  state="$(container_state fogstack-postgres)"
+  if postgres_health; then
+    print_status_row "postgres" "${state}" "postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}" "healthy"
+  else
+    print_status_row "postgres" "${state}" "postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}" "unhealthy"
+    all_healthy=1
+  fi
+
+  return "${all_healthy}"
+}
+
+cmd_endpoints() {
+  local profile
+
+  parse_profile_args "$@"
+  profile="${PARSED_PROFILE}"
+
+  printf 'AWS_ENDPOINT_URL=%s\n' "${AWS_ENDPOINT_URL}"
+  printf 'KUBECONFIG=%s\n' "${KUBECONFIG}"
+  printf 'KUBE_CONTEXT=%s\n' "${CONTEXT}"
+  printf 'REGISTRY=%s:%s\n' "${REGISTRY_HOST}" "${REGISTRY_PORT}"
+  printf 'POSTGRES_URL=postgresql://%s:%s@%s:%s/%s\n' "${POSTGRES_USER}" "${POSTGRES_PASSWORD}" "${POSTGRES_HOST}" "${POSTGRES_PORT}" "${POSTGRES_DB}"
+
+  if [[ "${profile}" == "full" ]]; then
+    printf 'OPENSEARCH_URL=%s\n' "${OPENSEARCH_URL}"
+  fi
+}
+
+wait_for_healthy() {
+  local profile="$1"
+  for _ in {1..90}; do
+    if cmd_status --profile "${profile}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  cmd_status --profile "${profile}" >&2 || true
+  return 1
+}
+
+start_cloud_provider_kind() {
+  FOGSTACK_CPK_PID_FILE="${CPK_PID_FILE}" \
+    FOGSTACK_CPK_LOG_FILE="${CPK_LOG_FILE}" \
+    "${REPO_ROOT}/stack/scripts/start-lb-provider.sh"
+}
+
+stop_cloud_provider_kind() {
+  FOGSTACK_CPK_PID_FILE="${CPK_PID_FILE}" \
+    "${REPO_ROOT}/stack/scripts/stop-lb-provider.sh"
+}
+
+cmd_up() {
+  local profile
+
+  parse_profile_args "$@"
+  profile="${PARSED_PROFILE}"
+
+  if [[ "${profile}" == "full" ]]; then
+    printf 'profile full available in Phase 3\n' >&2
+    return 1
+  fi
+
+  cmd_doctor --profile "${profile}"
+
+  log "ensuring kind cluster and registry"
+  "${REPO_ROOT}/stack/scripts/create-cluster.sh"
+
+  if container_running fogstack-postgres; then
+    log "compose services already running"
+  else
+    log "starting compose services"
+  fi
+  docker_compose up -d --wait
+
+  log "ensuring cloud-provider-kind"
+  start_cloud_provider_kind
+
+  log "waiting for minimal profile health"
+  wait_for_healthy "${profile}"
+
+  printf '%s\n' "${profile}" > "${STATE_PROFILE_FILE}"
+  cmd_endpoints --profile "${profile}"
+}
+
+terraform_destroy_sample_app() {
+  if ! kind_cluster_exists; then
+    return 0
+  fi
+
+  if [[ ! -d "${REPO_ROOT}/terraform/layer2-apps/.terraform" ]]; then
+    return 0
+  fi
+
+  log "destroying sample app Terraform layer if present"
+  terraform -chdir="${REPO_ROOT}/terraform/layer2-apps" destroy -auto-approve -input=false || true
+}
+
+remove_lb_containers() {
+  local container
+  while IFS= read -r container; do
+    [[ -n "${container}" ]] || continue
+    docker rm -f "${container}" >/dev/null 2>&1 || true
+  done < <(docker ps -aq --filter "label=io.x-k8s.cloud-provider-kind.cluster=${CLUSTER_NAME}")
+}
+
+remove_prefixed_containers() {
+  local container
+  while IFS= read -r container; do
+    [[ -n "${container}" ]] || continue
+    docker rm -f "${container}" >/dev/null 2>&1 || true
+  done < <(docker ps -aq --filter "name=^/fogstack[-_]")
+}
+
+remove_prefixed_volumes() {
+  local volume
+  while IFS= read -r volume; do
+    [[ -n "${volume}" ]] || continue
+    docker volume rm -f "${volume}" >/dev/null 2>&1 || true
+  done < <(docker volume ls --format '{{.Name}}' | grep -E '^fogstack[-_]' || true)
+}
+
+remove_prefixed_networks() {
+  local network
+  while IFS= read -r network; do
+    [[ -n "${network}" ]] || continue
+    docker network rm "${network}" >/dev/null 2>&1 || true
+  done < <(docker network ls --format '{{.Name}}' | grep -E '^fogstack[-_]' || true)
+}
+
+cmd_down() {
+  local remove_volumes=false
+
+  while (($# > 0)); do
+    case "$1" in
+      --volumes)
+        remove_volumes=true
+        shift
+        ;;
+      --verbose)
+        set -x
+        shift
+        ;;
+      *)
+        fail "unknown option: $1"
+        ;;
+    esac
+  done
+
+  terraform_destroy_sample_app
+
+  log "stopping cloud-provider-kind"
+  stop_cloud_provider_kind || true
+  remove_lb_containers
+
+  if [[ "${remove_volumes}" == "true" ]]; then
+    log "stopping compose services and removing volumes"
+    docker_compose down -v --remove-orphans || true
+  else
+    log "stopping compose services"
+    docker_compose down --remove-orphans || true
+  fi
+
+  log "removing registry container"
+  docker rm -f "${REGISTRY_NAME}" >/dev/null 2>&1 || true
+
+  log "deleting kind cluster ${CLUSTER_NAME}"
+  kind delete cluster --name "${CLUSTER_NAME}" >/dev/null 2>&1 || true
+
+  remove_prefixed_containers
+  if [[ "${remove_volumes}" == "true" ]]; then
+    remove_prefixed_volumes
+    remove_prefixed_networks
+  fi
+
+  rm -f "${STATE_PROFILE_FILE}"
+  log "down complete"
+}
+
+cmd_version() {
+  printf 'fogstack %s\n' "${FOGSTACK_VERSION}"
+}
+
+main() {
+  local command
+
+  while (($# > 0)); do
+    case "$1" in
+      --verbose)
+        set -x
+        shift
+        ;;
+      -h|--help)
+        usage
+        return 0
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  command="${1:-}"
+  [[ -n "${command}" ]] || {
+    usage
+    return 1
+  }
+  shift
+
+  case "${command}" in
+    up) cmd_up "$@" ;;
+    down) cmd_down "$@" ;;
+    status) cmd_status "$@" ;;
+    endpoints) cmd_endpoints "$@" ;;
+    doctor) cmd_doctor "$@" ;;
+    version) cmd_version "$@" ;;
+    help|-h|--help) usage ;;
+    *) fail "unknown command: ${command}" ;;
+  esac
+}
+
+main "$@"

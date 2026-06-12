@@ -8,7 +8,7 @@ export REPO_ROOT
 # shellcheck disable=SC1091
 source "${REPO_ROOT}/engine/lib/env-guard.sh"
 
-PID_FILE="${REPO_ROOT}/.state/cloud-provider-kind.pid"
+PID_FILE="${FOGSTACK_CPK_PID_FILE:-${REPO_ROOT}/.state/cloud-provider-kind.pid}"
 CONTAINER_NAME="fogstack-cloud-provider-kind"
 
 if [[ -f "${PID_FILE}" ]]; then
