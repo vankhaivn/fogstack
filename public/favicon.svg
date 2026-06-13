@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="fogstack icon">
+  <defs>
+    <linearGradient id="bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0d1422"/>
+      <stop offset="1" stop-color="#070b12"/>
+    </linearGradient>
+    <linearGradient id="fog" x1="14" y1="18" x2="50" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6fe7d2"/>
+      <stop offset="1" stop-color="#5aa9ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <path d="M13 44h38" stroke="#1e2c47" stroke-width="2" stroke-linecap="round"/>
+  <path d="M17 38c0-5.1 4.1-9.2 9.2-9.2 1.1-5.4 5.9-9.4 11.8-9.4 6.7 0 12.1 5.4 12.1 12.1 4.1.9 7.1 4.5 7.1 8.8 0 5-4 9-9 9H25.7C20.9 49.3 17 45.4 17 40.6V38Z" fill="url(#fog)" opacity=".94"/>
+  <path d="M23 38l7-6-7-6" fill="none" stroke="#07111f" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M34 40h12" stroke="#07111f" stroke-width="4.2" stroke-linecap="round"/>
+  <path d="M12 18h12M40 12h12M10 52h18M42 54h10" stroke="#6fe7d2" stroke-width="2.4" stroke-linecap="round" opacity=".68"/>
+</svg>

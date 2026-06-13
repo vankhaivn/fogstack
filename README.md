@@ -1,4 +1,4 @@
-# fogstack
+# <img src="public/favicon.svg" alt="" width="32" height="32" align="left" style="margin-right: 12px;"> fogstack
 
 fogstack is a local AWS endpoint platform for personal projects. It starts a
 repo-local Kubernetes cluster, registry, Postgres database, and optional

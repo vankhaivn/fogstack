@@ -1,4 +1,4 @@
-# fogstack
+# <img src="public/favicon.svg" alt="" width="32" height="32" align="left" style="margin-right: 12px;"> fogstack
 
 fogstack là nền tảng endpoint AWS cục bộ cho các dự án cá nhân. Nó khởi động
 một cụm Kubernetes, registry, cơ sở dữ liệu Postgres và các dịch vụ tùy chọn
