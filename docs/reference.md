@@ -29,6 +29,7 @@ the [Runbook](runbook.md).
 | `KUBE_CONTEXT` | minimal, full | `kind-fogstack` |
 | `REGISTRY` | minimal, full | `localhost:5001` |
 | `POSTGRES_URL` | minimal, full | `postgresql://fogstack:test@localhost:5432/appdb` |
+| `REDIS_URL` | minimal, full | `redis://localhost:6379/0` |
 | `AWS_ENDPOINT_URL` | full | `http://localhost:4566` |
 | `OPENSEARCH_URL` | full | `http://localhost:9200` |
 | `DASHBOARDS_URL` | full | `http://localhost:5601` |
@@ -49,6 +50,7 @@ precedence over `.env` for `FOGSTACK_PROFILE`, `FOGSTACK_DEV`, and
 | `REGISTRY_HOST` / `REGISTRY_PORT` | `localhost` / `5001` | Registry endpoint on the host. |
 | `POSTGRES_HOST` / `POSTGRES_PORT` | `localhost` / `5432` | Postgres endpoint on the host. |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `fogstack` / `test` / `appdb` | Development-only database credentials. |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `localhost` / `6379` / `0` | Redis endpoint on the host. |
 | `AWS_ENDPOINT_URL` | `http://localhost:4566` | AWS-compatible endpoint (full profile). |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `test` / `test` | Fake local credentials. |
 | `AWS_DEFAULT_REGION` | `us-east-1` | Fake local region. |
@@ -66,14 +68,15 @@ see "Version Bumps" in the [Runbook](runbook.md) before changing them.
 | `fogstack-control-plane`, `fogstack-worker*` | — | minimal, full | kind cluster nodes |
 | `fogstack-registry` | `127.0.0.1:5001` | minimal, full | image registry |
 | `fogstack-postgres` | `127.0.0.1:5432` | minimal, full | Postgres |
+| `fogstack-redis` | `127.0.0.1:6379` | minimal, full | Redis |
 | `fogstack-emulator` | `127.0.0.1:4566`, `7001-7099` | full | AWS-compatible API |
 | `fogstack-opensearch` | `127.0.0.1:9200` | full | OpenSearch |
 | `fogstack-dashboards` | `127.0.0.1:5601` | full | OpenSearch Dashboards |
 | cloud-provider-kind LB containers | dynamic | minimal, full | per-service local load balancers |
 
 All ports bind to `127.0.0.1` only. Data volumes: `fogstack-pgdata`,
-`fogstack-emulator-data`, `fogstack-opensearch-data` — kept by `fog down`,
-removed by `fog down --volumes`.
+`fogstack-redis-data`, `fogstack-emulator-data`, `fogstack-opensearch-data` —
+kept by `fog down`, removed by `fog down --volumes`.
 
 ## Files In `.state/`
 

@@ -1,9 +1,9 @@
 # <img src="public/favicon.svg" alt="" width="32" height="32" align="left" style="margin-right: 12px;"> fogstack
 
-fogstack là nền tảng endpoint AWS cục bộ cho các dự án cá nhân. Nó khởi động
-một cụm Kubernetes, registry, cơ sở dữ liệu Postgres và các dịch vụ tùy chọn
-tương thích AWS ngay trong phạm vi repo, để ứng dụng có thể trỏ vào endpoint
-cục bộ mà không chạm tới kube context của công ty hoặc credential AWS thật.
+fogstack là harness chạy ứng dụng cục bộ cho các dự án cá nhân. Nó khởi động
+một cụm Kubernetes, registry, Postgres, Redis và các dịch vụ tùy chọn tương
+thích AWS ngay trong phạm vi repo, để ứng dụng có thể trỏ vào endpoint cục bộ
+mà không chạm tới kube context của công ty hoặc credential AWS thật.
 
 ## Hợp đồng endpoint
 
@@ -11,7 +11,8 @@ cục bộ mà không chạm tới kube context của công ty hoặc credential
 |---|---|---|---|
 | `KUBECONFIG=<repo>/.state/kubeconfig.yaml` | minimal, full | Mục tiêu Kubernetes kiểu EKS | kind + cloud-provider-kind |
 | `localhost:5001` | minimal, full | Registry image kiểu ECR | registry |
-| `localhost:5432` | minimal, full | Postgres kiểu RDS | postgres |
+| `localhost:5432` | minimal, full | Cơ sở dữ liệu Postgres | postgres |
+| `localhost:6379` | minimal, full | Redis cache | redis |
 | `http://localhost:4566` | full | Bề mặt AWS API cho S3, SQS, IAM, Lambda và các dịch vụ liên quan | Floci |
 | `http://localhost:9200` | full | OpenSearch API | OpenSearch |
 | `http://localhost:5601` | full | OpenSearch Dashboards | OpenSearch Dashboards |
@@ -57,8 +58,8 @@ aws --endpoint-url "$AWS_ENDPOINT_URL" s3 ls
 
 | Profile | Khởi động | Bộ nhớ Docker VM đề xuất | Khi nào dùng |
 |---|---|---:|---|
-| `minimal` | kind, local registry, Postgres, plumbing cho sample app | 8 GB | Khi bạn cần Kubernetes, image và Postgres thật nhanh. |
-| `full` | mọi thứ trong `minimal`, cộng thêm Floci, OpenSearch, Dashboards, Gateway API routing và log shipping | Tối thiểu 8 GB, nhiều hơn sẽ mượt hơn | Khi bạn cần API tương thích AWS hoặc observability. |
+| `minimal` | kind, local registry, Postgres, Redis, plumbing cho sample app | 8 GB | Khi bạn cần Kubernetes, image và datastore cục bộ thật nhanh. |
+| `full` | mọi thứ trong `minimal`, cộng thêm Floci, OpenSearch, Dashboards và log shipping | Tối thiểu 8 GB, nhiều hơn sẽ mượt hơn | Khi bạn cần API tương thích AWS hoặc observability. |
 
 `fog up` mặc định dùng `minimal`. Chỉ dùng `--profile full` khi dự án của bạn
 cần endpoint tương thích AWS hoặc OpenSearch.
@@ -96,6 +97,12 @@ Postgres:
 psql "$POSTGRES_URL"
 ```
 
+Redis:
+
+```bash
+docker exec fogstack-redis redis-cli ping
+```
+
 Registry:
 
 ```bash
@@ -112,7 +119,7 @@ Toolbox đã pin version:
 
 ## Tài liệu
 
-- [Tutorial: Your First App](docs/tutorial-first-app.md) — từ `fog up` tới một app chạy sau load balancer cục bộ.
+- [Tutorial: Your First App](docs/tutorial-first-app.md) — từ `fog up` tới một app chạy sau load balancer cục bộ, kèm ví dụ full-tour Postgres/Redis/S3/OpenSearch.
 - [Architecture](docs/architecture.md) — fogstack là gì, các mảnh ghép nối ra sao, và cách nó cách ly khỏi Kubernetes/AWS trên máy bạn.
 - [Architecture (slides)](architecture.html) — bản kiến trúc dạng slide trình chiếu tương tác; mở bằng trình duyệt.
 - [Connect Your Project](docs/connect-your-project.md) — trỏ Terraform, SDK, Kubernetes và Postgres của dự án ngoài vào stack.
@@ -142,12 +149,12 @@ host shell
   |
   | eval "$(engine/fog endpoints)"
   v
-.state/kubeconfig.yaml       localhost:5001        localhost:5432
-      |                            |                    |
-      v                            v                    v
-   kind cluster  <-------- local registry -------->  Postgres
+.state/kubeconfig.yaml       localhost:5001        localhost:5432        localhost:6379
+      |                            |                    |                     |
+      v                            v                    v                     v
+   kind cluster  <-------- local registry -------->  Postgres              Redis
       |
-      +-- sample app, Gateway API, cloud-provider-kind
+      +-- sample app, full-tour app, cloud-provider-kind
       |
       +-- full profile service aliases
               |                  |
@@ -189,6 +196,6 @@ docker image rm "fogstack-toolbox:$(awk -F= '$1==\"FOGSTACK_VERSION\"{print $2}'
 fogstack được phát hành theo MIT License. Xem [LICENSE](LICENSE).
 
 Ghi công: Floci cho backend API tương thích AWS, kind cho Kubernetes cục bộ,
-cloud-provider-kind cho hành vi load balancer cục bộ, Envoy Gateway cho Gateway
-API routing, OpenSearch cho tìm kiếm/kiểm tra log cục bộ, PostgreSQL, Terraform,
-Helm, kubectl, Docker, ShellCheck và Hadolint.
+cloud-provider-kind cho hành vi load balancer cục bộ, OpenSearch cho tìm
+kiếm/kiểm tra log cục bộ, PostgreSQL, Redis, Terraform, Helm, kubectl, Docker,
+ShellCheck và Hadolint.

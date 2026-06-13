@@ -1,7 +1,0 @@
-gatewayClassName: fogstack-envoy
-gatewayName: sample-gateway
-controllerName: gateway.envoyproxy.io/gatewayclass-controller
-hostnames:
-  - sample.fogstack.test
-serviceName: sample-app
-servicePort: 80

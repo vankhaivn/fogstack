@@ -11,10 +11,10 @@ day-to-day operation, see the [Runbook](runbook.md).
 
 ## What fogstack Is
 
-fogstack gives a personal project a set of AWS-shaped local endpoints — a
-Kubernetes cluster, an image registry, a Postgres database, and optionally an
-AWS-compatible API and OpenSearch — so you can develop and wire integrations
-without spending cloud money or touching a real account.
+fogstack gives a personal project a local app-run harness — a Kubernetes
+cluster, an image registry, Postgres, Redis, and optionally an AWS-compatible
+API and OpenSearch — so you can develop and wire integrations without spending
+cloud money or touching a real account.
 
 It is built around one non-negotiable rule: **a fogstack command must never read
 or write your host's `~/.kube` or `~/.aws`, and must never reach a real AWS
@@ -28,18 +28,21 @@ in the [README](../README.md) for what it deliberately does not do.
 ```text
 HOST SHELL
   eval "$(engine/fog endpoints)"  ->  KUBECONFIG, REGISTRY, POSTGRES_URL,
-                                      AWS_ENDPOINT_URL (full), ...
+                                      REDIS_URL, AWS_ENDPOINT_URL (full), ...
       |
       v
 ┌─ Docker engine ───────────────────────────────────┐
 │                                                   │
 │ default network                                   │
 │   postgres      127.0.0.1:5432                    │
+│   redis         127.0.0.1:6379                    │
 │   dashboards    127.0.0.1:5601    (full)          │
 │                                                   │
 │ "kind" network                                    │
 │   control-plane + 2 worker nodes                  │
 │   registry      pull via fogstack-registry:5000   │
+│   postgres      reachable as fogstack-postgres    │
+│   redis         reachable as fogstack-redis       │
 │   emulator      127.0.0.1:4566    (full)          │
 │   opensearch    127.0.0.1:9200    (full)          │
 │   load balancer containers (one per Service)      │
@@ -50,8 +53,10 @@ HOST SHELL
       v
 INSIDE THE CLUSTER
   your pods  ->  Service (LoadBalancer)  ->  local LB container  ->  localhost port
-  your pods  ->  http://fogstack-emulator:4566    (AWS API, full)
-  your pods  ->  http://fogstack-opensearch:9200  (OpenSearch, full)
+  your pods  ->  fogstack-postgres:5432           (Postgres)
+  your pods  ->  fogstack-redis:6379              (Redis)
+  your pods  ->  ExternalName -> fogstack-emulator:4566    (AWS API, full)
+  your pods  ->  ExternalName -> fogstack-opensearch:9200  (OpenSearch, full)
 ```
 
 ## Components
@@ -64,8 +69,10 @@ The `minimal` profile starts the core development loop:
 - **Local registry** — a `registry` container published at `localhost:5001`. You
   push images here; the cluster nodes pull from it (see "How images reach the
   cluster" below).
-- **Postgres** — a database published at `localhost:5432` for host-side
-  development.
+- **Postgres** — a database published at `localhost:5432` and reachable from
+  pods through the `kind` network as `fogstack-postgres:5432`.
+- **Redis** — a cache published at `localhost:6379` and reachable from pods
+  through the `kind` network as `fogstack-redis:6379`.
 - **Load balancer controller** — `cloud-provider-kind`, which gives Kubernetes
   `Service` objects of type `LoadBalancer` a working local address.
 
@@ -142,14 +149,17 @@ node is configured with a containerd registry mirror so that `localhost:5001`
 resolves to the registry over the `kind` network. That is why a chart can use an
 image like `localhost:5001/my-app:dev` and the nodes can still pull it.
 
-**Reaching the AWS API from inside the cluster.** The emulator is attached to
-the `kind` network under the name `fogstack-emulator`, so a pod can call
-`http://fogstack-emulator:4566` directly — no host round-trip. The emulator also
-launches its own backing containers (for example database proxies) onto the
-`kind` network, which is why it is given access to the Docker socket. OpenSearch
-is bridged the same way as `fogstack-opensearch:9200`. Postgres and Dashboards
-are published to the host only; treat Postgres as a host-side development
-database rather than an in-cluster service.
+**Reaching backing services from inside the cluster.** Postgres and Redis are
+attached to the `kind` Docker network under `fogstack-postgres` and
+`fogstack-redis`, so an app pod can use the same real backing services that the
+host reaches through `POSTGRES_URL` and `REDIS_URL`.
+
+**Reaching full-profile services from inside the cluster.** The emulator and
+OpenSearch are also attached to the `kind` network. Example charts wrap them in
+Kubernetes `ExternalName` Services such as
+`aws-api.fogstack.svc.cluster.local` and `opensearch.fogstack.svc.cluster.local`
+so application config can use normal service discovery while the traffic still
+stays local.
 
 **Load balancer addresses.** `cloud-provider-kind` watches for `Service` objects
 of type `LoadBalancer` and starts a small load balancer container for each one.
@@ -177,8 +187,8 @@ Two kinds of state exist:
 - **`.state/`** holds the repo-local kubeconfig, the repo-local AWS config files,
   and the last-started profile. It is disposable runtime configuration.
 - **Docker named volumes** (`fogstack-pgdata`, `fogstack-emulator-data`,
-  `fogstack-opensearch-data`) hold the actual data — database rows, buckets and
-  queues, search indices.
+  `fogstack-redis-data`, `fogstack-opensearch-data`) hold the actual data —
+  database rows, Redis keys, buckets and queues, search indices.
 
 `fog down` stops and removes the containers and the cluster but keeps the data
 volumes; `fog down --volumes` also removes them. The full picture of what

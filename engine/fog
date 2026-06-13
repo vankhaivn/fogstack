@@ -69,6 +69,9 @@ POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 POSTGRES_USER="${POSTGRES_USER:-fogstack}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-test}"
 POSTGRES_DB="${POSTGRES_DB:-appdb}"
+REDIS_HOST="${REDIS_HOST:-localhost}"
+REDIS_PORT="${REDIS_PORT:-6379}"
+REDIS_DB="${REDIS_DB:-0}"
 AWS_ENDPOINT_URL="${AWS_ENDPOINT_URL:-http://localhost:4566}"
 OPENSEARCH_URL="${OPENSEARCH_URL:-http://localhost:9200}"
 DASHBOARDS_URL="${DASHBOARDS_URL:-http://localhost:5601}"
@@ -156,8 +159,8 @@ parse_profile_args() {
 
 profile_ports() {
   case "$1" in
-    minimal) printf '%s\n' "${REGISTRY_PORT}" "${POSTGRES_PORT}" ;;
-    full) printf '%s\n' 4566 "${REGISTRY_PORT}" "${POSTGRES_PORT}" 9200 5601 ;;
+    minimal) printf '%s\n' "${REGISTRY_PORT}" "${POSTGRES_PORT}" "${REDIS_PORT}" ;;
+    full) printf '%s\n' 4566 "${REGISTRY_PORT}" "${POSTGRES_PORT}" "${REDIS_PORT}" 9200 5601 ;;
   esac
 }
 
@@ -166,6 +169,7 @@ expected_port_owner() {
     4566) printf '%s\n' 'fogstack-emulator' ;;
     "${REGISTRY_PORT}") printf '%s\n' "${REGISTRY_NAME}" ;;
     "${POSTGRES_PORT}") printf '%s\n' 'fogstack-postgres' ;;
+    "${REDIS_PORT}") printf '%s\n' 'fogstack-redis' ;;
     9200) printf '%s\n' 'fogstack-opensearch' ;;
     5601) printf '%s\n' 'fogstack-dashboards' ;;
     *) printf '%s\n' '' ;;
@@ -440,6 +444,11 @@ postgres_health() {
   docker exec fogstack-postgres pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" >/dev/null 2>&1
 }
 
+redis_health() {
+  container_running fogstack-redis || return 1
+  docker exec fogstack-redis redis-cli ping 2>/dev/null | grep -qx PONG
+}
+
 http_endpoint_alive() {
   local url="$1"
   local code
@@ -506,6 +515,14 @@ cmd_status() {
     all_healthy=1
   fi
 
+  state="$(container_state fogstack-redis)"
+  if redis_health; then
+    print_status_row "redis" "${state}" "redis://${REDIS_HOST}:${REDIS_PORT}/${REDIS_DB}" "healthy"
+  else
+    print_status_row "redis" "${state}" "redis://${REDIS_HOST}:${REDIS_PORT}/${REDIS_DB}" "unhealthy"
+    all_healthy=1
+  fi
+
   if [[ "${profile}" == "full" ]]; then
     state="$(container_state fogstack-emulator)"
     if emulator_health; then
@@ -545,6 +562,7 @@ cmd_endpoints() {
   printf 'KUBE_CONTEXT=%s\n' "${CONTEXT}"
   printf 'REGISTRY=%s:%s\n' "${REGISTRY_HOST}" "${REGISTRY_PORT}"
   printf 'POSTGRES_URL=postgresql://%s:%s@%s:%s/%s\n' "${POSTGRES_USER}" "${POSTGRES_PASSWORD}" "${POSTGRES_HOST}" "${POSTGRES_PORT}" "${POSTGRES_DB}"
+  printf 'REDIS_URL=redis://%s:%s/%s\n' "${REDIS_HOST}" "${REDIS_PORT}" "${REDIS_DB}"
 
   if [[ "${profile}" == "full" ]]; then
     printf 'AWS_ENDPOINT_URL=%s\n' "${AWS_ENDPOINT_URL}"
@@ -640,17 +658,17 @@ cmd_tf_init() {
   printf 'generated %s\n' "${target_file}"
 }
 
-terraform_destroy_sample_app() {
+terraform_destroy_full_tour() {
   if ! kind_cluster_exists; then
     return 0
   fi
 
-  if [[ ! -d "${REPO_ROOT}/terraform/layer2-apps/.terraform" ]]; then
+  if [[ ! -d "${REPO_ROOT}/examples/full-tour/terraform/.terraform" ]]; then
     return 0
   fi
 
-  log "destroying sample app Terraform layer if present"
-  terraform -chdir="${REPO_ROOT}/terraform/layer2-apps" destroy -auto-approve -input=false || true
+  log "destroying full-tour Terraform variant if present"
+  terraform -chdir="${REPO_ROOT}/examples/full-tour/terraform" destroy -auto-approve -input=false || true
 }
 
 remove_lb_containers() {
@@ -704,7 +722,7 @@ cmd_down() {
     esac
   done
 
-  terraform_destroy_sample_app
+  terraform_destroy_full_tour
 
   log "stopping cloud-provider-kind"
   stop_cloud_provider_kind || true

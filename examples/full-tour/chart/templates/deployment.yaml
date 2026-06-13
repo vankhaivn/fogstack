@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "full-tour.fullname" . }}
+  namespace: {{ include "full-tour.namespace" . }}
+  labels:
+    {{- include "full-tour.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "full-tour.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "full-tour.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/managed-by: fogstack
+    spec:
+      containers:
+        - name: full-tour
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "full-tour.fullname" . }}-env
+            - secretRef:
+                name: {{ include "full-tour.fullname" . }}-aws
+          ports:
+            - name: http
+              containerPort: {{ .Values.app.httpPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20

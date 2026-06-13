@@ -20,8 +20,8 @@ eval "$(./engine/fog endpoints)"
 ```
 
 All rows should report `healthy`. Keep this terminal; the exported variables
-(`KUBECONFIG`, `KUBE_CONTEXT`, `REGISTRY`, `POSTGRES_URL`) are used in every
-step below.
+(`KUBECONFIG`, `KUBE_CONTEXT`, `REGISTRY`, `POSTGRES_URL`, `REDIS_URL`) are
+used in every step below.
 
 ## 2. Build And Push The Image
 
@@ -80,7 +80,7 @@ docker ps --filter "label=io.x-k8s.cloud-provider-kind.cluster=fogstack" \
 
 Take the host port mapped to `80/tcp` and `curl "http://localhost:<port>"`.
 
-## 5. Optional: Talk To Postgres
+## 5. Optional: Talk To Postgres And Redis
 
 The stack includes a Postgres instance your app can use during development:
 
@@ -94,9 +94,15 @@ If `psql` is not installed on the host, run it inside the container:
 docker exec fogstack-postgres psql -U fogstack -d appdb -c 'SELECT version();'
 ```
 
-Note: Postgres is reachable from your host shell at `localhost:5432`. Pods
-inside the cluster do not get a pre-wired route to it; treat it as a
-host-side development database.
+The stack also includes Redis:
+
+```bash
+docker exec fogstack-redis redis-cli ping
+```
+
+Postgres and Redis are reachable from the host through `POSTGRES_URL` and
+`REDIS_URL`. Pods in the cluster can reach the same backing services through
+`fogstack-postgres:5432` and `fogstack-redis:6379`.
 
 ## 6. Iterate
 
@@ -130,7 +136,56 @@ To deploy your own project instead of the sample:
 For pointing an app's AWS SDK, Terraform, or Postgres configuration at the
 stack, see [Connect Your Project](connect-your-project.md).
 
-## 8. Clean Up
+## 8. Full-Tour App
+
+The sample app above is intentionally tiny. The full-tour example is the
+heavier check: it deploys a Go service that talks to Postgres, Redis, S3, and
+OpenSearch from inside the cluster.
+
+Start the full profile and export its endpoints:
+
+```bash
+./engine/fog up --profile full
+eval "$(./engine/fog endpoints --profile full)"
+```
+
+Build and push the example image:
+
+```bash
+FULL_TOUR_IMAGE_TAG="$(awk -F= '$1=="FULL_TOUR_IMAGE_TAG"{print $2}' versions.env)"
+docker build -t "$REGISTRY/full-tour:$FULL_TOUR_IMAGE_TAG" examples/full-tour/app
+docker push "$REGISTRY/full-tour:$FULL_TOUR_IMAGE_TAG"
+```
+
+Deploy it with Helm:
+
+```bash
+helm upgrade --install full-tour examples/full-tour/chart \
+  --kubeconfig "$KUBECONFIG" \
+  --kube-context "$KUBE_CONTEXT" \
+  --namespace fogstack \
+  --create-namespace \
+  --set "image.repository=$REGISTRY/full-tour" \
+  --set "image.tag=$FULL_TOUR_IMAGE_TAG" \
+  --wait --timeout 240s
+```
+
+Open the service:
+
+```bash
+FULL_TOUR_IP="$(kubectl --kubeconfig "$KUBECONFIG" --context "$KUBE_CONTEXT" \
+  -n fogstack get svc full-tour -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
+curl "http://$FULL_TOUR_IP/healthz"
+curl -sS -X POST "http://$FULL_TOUR_IP/notes" \
+  -H 'content-type: application/json' \
+  -d '{"title":"fogstack full tour","body":"hello from Postgres, Redis, S3, and OpenSearch"}'
+curl "http://$FULL_TOUR_IP/notes"
+```
+
+`/healthz` should report all four backends healthy, and the note should appear
+in the `GET /notes` response.
+
+## 9. Clean Up
 
 ```bash
 helm uninstall sample-app --kubeconfig "$KUBECONFIG" --kube-context "$KUBE_CONTEXT"

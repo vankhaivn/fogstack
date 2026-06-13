@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.externalServices.awsApi.name }}
+  namespace: {{ include "full-tour.namespace" . }}
+  labels:
+    {{- include "full-tour.labels" . | nindent 4 }}
+spec:
+  type: ExternalName
+  externalName: {{ .Values.externalServices.awsApi.externalName }}
+  ports:
+    - name: http
+      port: {{ .Values.externalServices.awsApi.port }}
+      targetPort: {{ .Values.externalServices.awsApi.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.externalServices.opensearch.name }}
+  namespace: {{ include "full-tour.namespace" . }}
+  labels:
+    {{- include "full-tour.labels" . | nindent 4 }}
+spec:
+  type: ExternalName
+  externalName: {{ .Values.externalServices.opensearch.externalName }}
+  ports:
+    - name: http
+      port: {{ .Values.externalServices.opensearch.port }}
+      targetPort: {{ .Values.externalServices.opensearch.port }}

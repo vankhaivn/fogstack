@@ -1,7 +1,7 @@
 # <img src="public/favicon.svg" alt="" width="32" height="32" align="left" style="margin-right: 12px;"> fogstack
 
-fogstack is a local AWS endpoint platform for personal projects. It starts a
-repo-local Kubernetes cluster, registry, Postgres database, and optional
+fogstack is a local app-run harness for personal projects. It starts a
+repo-local Kubernetes cluster, registry, Postgres, Redis, and optional
 AWS-compatible services so an application can be pointed at local endpoints
 without touching company kube contexts or real AWS credentials.
 
@@ -11,7 +11,8 @@ without touching company kube contexts or real AWS credentials.
 |---|---|---|---|
 | `KUBECONFIG=<repo>/.state/kubeconfig.yaml` | minimal, full | EKS-like Kubernetes target | kind + cloud-provider-kind |
 | `localhost:5001` | minimal, full | ECR-like image registry | registry |
-| `localhost:5432` | minimal, full | RDS-like Postgres | postgres |
+| `localhost:5432` | minimal, full | Postgres database | postgres |
+| `localhost:6379` | minimal, full | Redis cache | redis |
 | `http://localhost:4566` | full | AWS API surface for S3, SQS, IAM, Lambda, and related services | Floci |
 | `http://localhost:9200` | full | OpenSearch API | OpenSearch |
 | `http://localhost:5601` | full | OpenSearch Dashboards | OpenSearch Dashboards |
@@ -56,8 +57,8 @@ aws --endpoint-url "$AWS_ENDPOINT_URL" s3 ls
 
 | Profile | Starts | Suggested Docker VM memory | Use it when |
 |---|---|---:|---|
-| `minimal` | kind, local registry, Postgres, sample app plumbing | 8 GB | You need Kubernetes, images, and Postgres quickly. |
-| `full` | everything in `minimal`, plus Floci, OpenSearch, Dashboards, Gateway API routing, and log shipping | 8 GB minimum, more is smoother | You need AWS-compatible APIs or observability. |
+| `minimal` | kind, local registry, Postgres, Redis, sample app plumbing | 8 GB | You need Kubernetes, images, and local datastores quickly. |
+| `full` | everything in `minimal`, plus Floci, OpenSearch, Dashboards, and log shipping | 8 GB minimum, more is smoother | You need AWS-compatible APIs or observability. |
 
 `fog up` defaults to `minimal`. Use `--profile full` only when your project needs
 the AWS-compatible endpoint or OpenSearch.
@@ -95,6 +96,12 @@ Postgres:
 psql "$POSTGRES_URL"
 ```
 
+Redis:
+
+```bash
+docker exec fogstack-redis redis-cli ping
+```
+
 Registry:
 
 ```bash
@@ -111,7 +118,7 @@ Pinned toolbox:
 
 ## Documentation
 
-- [Tutorial: Your First App](docs/tutorial-first-app.md) — from `fog up` to a deployed app behind a local load balancer.
+- [Tutorial: Your First App](docs/tutorial-first-app.md) — from `fog up` to a deployed app behind a local load balancer, plus the full-tour Postgres/Redis/S3/OpenSearch example.
 - [Architecture](docs/architecture.md) — what fogstack is, how the pieces fit, and how it stays isolated from your host Kubernetes and AWS.
 - [Architecture (slides)](architecture.html) — the same architecture as an interactive slide deck; open it in a browser.
 - [Connect Your Project](docs/connect-your-project.md) — point an outside project's Terraform, SDKs, Kubernetes, and Postgres config at the stack.
@@ -139,12 +146,12 @@ host shell
   |
   | eval "$(engine/fog endpoints)"
   v
-.state/kubeconfig.yaml       localhost:5001        localhost:5432
-      |                            |                    |
-      v                            v                    v
-   kind cluster  <-------- local registry -------->  Postgres
+.state/kubeconfig.yaml       localhost:5001        localhost:5432        localhost:6379
+      |                            |                    |                     |
+      v                            v                    v                     v
+   kind cluster  <-------- local registry -------->  Postgres              Redis
       |
-      +-- sample app, Gateway API, cloud-provider-kind
+      +-- sample app, full-tour app, cloud-provider-kind
       |
       +-- full profile service aliases
               |                  |
@@ -186,6 +193,6 @@ docker image rm "fogstack-toolbox:$(awk -F= '$1==\"FOGSTACK_VERSION\"{print $2}'
 fogstack is released under the MIT License. See [LICENSE](LICENSE).
 
 Credits: Floci for the AWS-compatible API backend, kind for local Kubernetes,
-cloud-provider-kind for local load balancer behavior, Envoy Gateway for Gateway
-API routing, OpenSearch for local search/log inspection, PostgreSQL, Terraform,
-Helm, kubectl, Docker, ShellCheck, and Hadolint.
+cloud-provider-kind for local load balancer behavior, OpenSearch for local
+search/log inspection, PostgreSQL, Redis, Terraform, Helm, kubectl, Docker,
+ShellCheck, and Hadolint.

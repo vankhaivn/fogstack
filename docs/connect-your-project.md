@@ -78,7 +78,8 @@ helm --kubeconfig "$KUBECONFIG" --kube-context "$KUBE_CONTEXT" list -A
 ```
 
 Application manifests can use normal Kubernetes service discovery once deployed
-inside the cluster.
+inside the cluster. For fogstack backing services, pods can reach Postgres at
+`fogstack-postgres:5432` and Redis at `fogstack-redis:6379`.
 
 ## Postgres
 
@@ -90,6 +91,22 @@ psql "$POSTGRES_URL"
 
 In application config, use the host and port from the URL. The default database,
 user, and password are development-only values from `.env.example`.
+
+## Redis
+
+The exported `REDIS_URL` is ready for local apps:
+
+```bash
+redis-cli -u "$REDIS_URL" ping
+```
+
+If `redis-cli` is not installed on the host, use the container:
+
+```bash
+docker exec fogstack-redis redis-cli ping
+```
+
+In-cluster apps can use `redis://fogstack-redis:6379/0`.
 
 ## Registry
 

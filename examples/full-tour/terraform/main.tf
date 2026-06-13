@@ -15,11 +15,11 @@ terraform {
 }
 
 locals {
-  kubeconfig_path             = abspath("${path.module}/../../.state/kubeconfig.yaml")
+  kubeconfig_path             = abspath("${path.module}/../../../.state/kubeconfig.yaml")
   kube_context                = "kind-fogstack"
-  sample_app_chart_path       = abspath("${path.module}/../../examples/sample-app/chart")
-  gateway_route_chart_path    = abspath("${path.module}/charts/gateway-route")
-  envoy_gateway_chart_version = "v1.5.1"
+  full_tour_chart_path        = abspath("${path.module}/../chart")
+  full_tour_image_repository  = "localhost:5001/full-tour"
+  full_tour_image_tag         = "0.1.0"
   fluent_bit_chart_version    = "0.57.7"
   fluent_bit_image_repository = "cr.fluentbit.io/fluent/fluent-bit"
   fluent_bit_image_tag        = "5.0.7"
@@ -44,12 +44,6 @@ provider "helm" {
 resource "kubernetes_namespace_v1" "fogstack" {
   metadata {
     name = "fogstack"
-  }
-}
-
-resource "kubernetes_namespace_v1" "envoy_gateway_system" {
-  metadata {
-    name = "envoy-gateway-system"
   }
 }
 
@@ -89,57 +83,25 @@ resource "kubernetes_service_v1" "opensearch" {
   }
 }
 
-resource "helm_release" "sample_app" {
-  name      = "sample-app"
-  chart     = local.sample_app_chart_path
-  namespace = "default"
+resource "helm_release" "full_tour" {
+  name      = "full-tour"
+  chart     = local.full_tour_chart_path
+  namespace = kubernetes_namespace_v1.fogstack.metadata[0].name
   wait      = true
   timeout   = 180
 
   values = [
     yamlencode({
       image = {
-        repository = "localhost:5001/sample-app"
-        tag        = "0.1.0"
+        repository = local.full_tour_image_repository
+        tag        = local.full_tour_image_tag
       }
     })
   ]
-}
-
-resource "helm_release" "envoy_gateway" {
-  name       = "envoy-gateway"
-  repository = "oci://docker.io/envoyproxy"
-  chart      = "gateway-helm"
-  version    = local.envoy_gateway_chart_version
-  namespace  = kubernetes_namespace_v1.envoy_gateway_system.metadata[0].name
-  wait       = true
-  timeout    = 300
 
   depends_on = [
-    kubernetes_namespace_v1.envoy_gateway_system
-  ]
-}
-
-resource "helm_release" "gateway_route" {
-  name      = "fogstack-gateway-route"
-  chart     = local.gateway_route_chart_path
-  namespace = "default"
-  wait      = true
-  timeout   = 180
-
-  values = [
-    yamlencode({
-      gatewayClassName = "fogstack-envoy"
-      gatewayName      = "sample-gateway"
-      hostnames        = ["sample.fogstack.test"]
-      serviceName      = "sample-app"
-      servicePort      = 80
-    })
-  ]
-
-  depends_on = [
-    helm_release.envoy_gateway,
-    helm_release.sample_app
+    kubernetes_service_v1.aws_api,
+    kubernetes_service_v1.opensearch
   ]
 }
 
@@ -250,18 +212,10 @@ resource "helm_release" "fluent_bit" {
   ]
 }
 
-output "sample_app_release" {
-  value = helm_release.sample_app.name
+output "full_tour_release" {
+  value = helm_release.full_tour.name
 }
 
-output "gateway_hostname" {
-  value = "sample.fogstack.test"
-}
-
-output "aws_api_service" {
-  value = local.aws_api_endpoint_in_cluster
-}
-
-output "incluster_bucket_name" {
-  value = local.incluster_bucket_name
+output "full_tour_namespace" {
+  value = kubernetes_namespace_v1.fogstack.metadata[0].name
 }

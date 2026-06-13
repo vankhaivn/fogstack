@@ -16,6 +16,29 @@ services:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
       interval: 5s
       retries: 10
+    networks:
+      default: {}
+      kind:
+        aliases:
+          - fogstack-postgres
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:8.8.0-alpine3.23}
+    container_name: fogstack-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - fogstack-redis-data:/data
+    networks:
+      default: {}
+      kind:
+        aliases:
+          - fogstack-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   emulator:
     image: ${EMULATOR_IMAGE:-floci/floci:1.5.24}
@@ -87,6 +110,7 @@ services:
 
 volumes:
   fogstack-pgdata: {}
+  fogstack-redis-data: {}
   fogstack-emulator-data: {}
   fogstack-opensearch-data: {}
 

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: full-tour
+description: fogstack full-tour app
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

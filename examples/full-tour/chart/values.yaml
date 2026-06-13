@@ -1,0 +1,44 @@
+replicaCount: 1
+
+namespace:
+  create: true
+  name: fogstack
+
+image:
+  repository: localhost:5001/full-tour
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: LoadBalancer
+  port: 80
+
+app:
+  httpPort: 8080
+
+postgres:
+  url: postgresql://fogstack:test@fogstack-postgres:5432/appdb?sslmode=disable
+
+redis:
+  url: redis://fogstack-redis:6379/0
+
+aws:
+  endpointUrl: ""
+  region: us-east-1
+  accessKeyId: test
+  secretAccessKey: test
+  s3Bucket: fogstack-full-tour
+
+opensearch:
+  url: ""
+  index: full-tour-notes
+
+externalServices:
+  awsApi:
+    name: aws-api
+    externalName: fogstack-emulator
+    port: 4566
+  opensearch:
+    name: opensearch
+    externalName: fogstack-opensearch
+    port: 9200

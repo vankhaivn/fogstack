@@ -13,13 +13,13 @@ written for macOS with Docker Desktop and repo-local state.
 6. Check health with `./engine/fog status`.
 
 Use `./engine/fog up --profile full` only when you need the AWS-compatible API,
-OpenSearch, Dashboards, or Gateway API proof resources.
+OpenSearch, Dashboards, or the full-tour example.
 
 ## Stop
 
 Use `./engine/fog down` when you want containers stopped but local volumes kept.
 Use `./engine/fog down --volumes` when you want a clean rebuild and do not need
-Postgres data.
+Postgres or Redis data.
 
 After a full cleanup, `docker ps -a` should not show fogstack containers and
 `kind get clusters` should not list `fogstack`.
