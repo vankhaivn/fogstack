@@ -263,7 +263,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
 
     <!-- ============ SLIDE 1 — TITLE ============ -->
     <section class="slide s-title active visible">
-      <div class="chrome reveal r1"><span><b>fogstack</b> · kiến trúc</span><span>đám mây cục bộ cô lập khỏi host</span><span>v1.0.0-beta.1</span></div>
+      <div class="chrome reveal r1"><span><b>fogstack</b> · kiến trúc</span><span>đám mây cục bộ cô lập khỏi host</span><span>v1.0.0</span></div>
       <div class="term reveal r3">
         <div class="bar"><i></i><i></i><i></i><span>~/fogstack — zsh</span></div>
         <div class="body">
@@ -278,7 +278,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
         <div class="sub reveal r4">Kiến trúc — cách đám mây cục bộ<br>được nối lại với nhau</div>
       </div>
       <div class="foot reveal r5">
-        <span>kind · registry · postgres · api tương thích aws</span>
+        <span>kind · registry · postgres · redis · api tương thích aws</span>
         <span class="pill"><span class="dot"></span>không chạm vào ~/.kube hoặc ~/.aws</span>
       </div>
     </section>
@@ -289,7 +289,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
         <div class="slide-chrome reveal r1"><span class="brand"><b>fogstack</b> · kiến trúc</span><span class="pg">02 / 12</span></div>
         <div class="eyebrow reveal r1">Nó là gì</div>
         <h1 class="h2 reveal r2">Endpoint mang dáng AWS, <span class="accent">ngay trên máy bạn</span></h1>
-        <p class="lead reveal r3">fogstack cho một dự án cá nhân một <b>cụm Kubernetes</b>, một <b>image registry</b>, một <b>cơ sở dữ liệu Postgres</b>, và tùy chọn thêm một <b>API tương thích AWS</b> cùng <b>OpenSearch</b> — để bạn phát triển và nối dây tích hợp mà không tốn tiền cloud hoặc chạm vào tài khoản thật.</p>
+        <p class="lead reveal r3">fogstack cho một dự án cá nhân một <b>cụm Kubernetes</b>, một <b>image registry</b>, <b>Postgres</b>, <b>Redis</b>, và tùy chọn thêm một <b>API tương thích AWS</b> cùng <b>OpenSearch</b> — để bạn phát triển và nối dây tích hợp mà không tốn tiền cloud hoặc chạm vào tài khoản thật.</p>
         <div class="rule-card reveal r4">
           <div class="tag">Luật duy nhất</div>
           <div class="txt">Một lệnh fogstack <em>không bao giờ</em> được đọc hoặc ghi <span class="tok">~/.kube</span> hay <span class="tok">~/.aws</span> của bạn, và <em>không bao giờ</em> được chạm tới tài khoản AWS thật. Toàn bộ thiết kế còn lại đi theo luật này.</div>
@@ -308,7 +308,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
           <div class="plane host reveal r3">
             <span class="plabel">Shell trên host</span>
             <div class="row"><span class="tok">eval "$(fog endpoints)"</span><span class="arrow">→</span>
-              <span class="vars">KUBECONFIG · REGISTRY · POSTGRES_URL · AWS_ENDPOINT_URL (full)</span></div>
+              <span class="vars">KUBECONFIG · REGISTRY · POSTGRES_URL · REDIS_URL · AWS_ENDPOINT_URL (full)</span></div>
           </div>
           <div class="flow reveal r4">▼</div>
           <div class="plane docker reveal r4">
@@ -318,6 +318,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
                 <div class="nlabel">mạng mặc định</div>
                 <div class="chips">
                   <span class="chip">postgres <span class="port">:5432</span></span>
+                  <span class="chip">redis <span class="port">:6379</span></span>
                   <span class="chip muted">dashboards <span class="port">:5601</span> · full</span>
                 </div>
               </div>
@@ -326,6 +327,8 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
                 <div class="chips">
                   <span class="chip">control-plane + 2 worker</span>
                   <span class="chip">registry <span class="port">:5000</span></span>
+                  <span class="chip">postgres <span class="port">:5432</span></span>
+                  <span class="chip">redis <span class="port">:6379</span></span>
                   <span class="chip">emulator <span class="port">:4566</span></span>
                   <span class="chip">opensearch <span class="port">:9200</span></span>
                   <span class="chip muted">các container load balancer</span>
@@ -339,7 +342,8 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
             <span class="plabel">Bên trong cluster</span>
             <div class="row">
               <div>pod của bạn <span class="a">→</span> <b>Service (LoadBalancer)</b> <span class="a">→</span> container LB cục bộ <span class="a">→</span> localhost port</div>
-              <div>pod của bạn <span class="a">→</span> <b>http://fogstack-emulator:4566</b> &nbsp;·&nbsp; <b>http://fogstack-opensearch:9200</b></div>
+              <div>pod của bạn <span class="a">→</span> <b>fogstack-postgres:5432</b> &nbsp;·&nbsp; <b>fogstack-redis:6379</b></div>
+              <div>pod của bạn <span class="a">→</span> <b>ExternalName Services</b> <span class="a">→</span> fogstack-emulator / fogstack-opensearch</div>
             </div>
           </div>
         </div>
@@ -357,12 +361,13 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
             <div class="group-label"><span class="pill blue" style="font-size:18px;padding:6px 16px">minimal</span><span class="ln"></span></div>
             <div class="svc"><span class="nm">kind cluster<small>1 control-plane + 2 worker</small></span><span class="pt">k8s</span></div>
             <div class="svc"><span class="nm">Local registry<small>push image, node pull từ đây</small></span><span class="pt">:5001</span></div>
-            <div class="svc"><span class="nm">Postgres<small>database dev phía host</small></span><span class="pt">:5432</span></div>
+            <div class="svc"><span class="nm">Postgres<small>database dev trên host + trong cluster</small></span><span class="pt">:5432</span></div>
+            <div class="svc"><span class="nm">Redis<small>cache trên host + trong cluster</small></span><span class="pt">:6379</span></div>
             <div class="svc"><span class="nm">Load balancer controller<small>cloud-provider-kind</small></span><span class="pt">LB</span></div>
           </div>
           <div class="card reveal r4">
             <div class="group-label"><span class="pill" style="font-size:18px;padding:6px 16px">full &nbsp;(+ minimal)</span><span class="ln"></span></div>
-            <div class="svc"><span class="nm">API tương thích AWS<small>cũng có fogstack-emulator:4566 trong cluster</small></span><span class="pt">:4566</span></div>
+            <div class="svc"><span class="nm">API tương thích AWS<small>qua ExternalName trong chart ví dụ</small></span><span class="pt">:4566</span></div>
             <div class="svc"><span class="nm">OpenSearch<small>kho log / document cục bộ</small></span><span class="pt">:9200</span></div>
             <div class="svc"><span class="nm">OpenSearch Dashboards<small>duyệt index qua UI</small></span><span class="pt">:5601</span></div>
           </div>
@@ -422,7 +427,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
         <div class="steps">
           <div class="step reveal r3"><div class="n">1</div><h3><code>fog up</code></h3><p>Khởi động hoặc tái sử dụng container cho profile đã chọn và chờ healthy.</p></div>
           <div class="step reveal r4"><div class="n">2</div><h3><code>eval "$(fog endpoints)"</code></h3><p>Export các biến kết nối vào shell hiện tại của bạn.</p></div>
-          <div class="step reveal r5"><div class="n">3</div><h3>tool của bạn kết nối</h3><p><span class="tok">kubectl</span>, <span class="tok">helm</span>, <span class="tok">psql</span>, <span class="tok">aws</span>, và Docker dùng các biến đó để tới container cục bộ.</p></div>
+          <div class="step reveal r5"><div class="n">3</div><h3>tool của bạn kết nối</h3><p><span class="tok">kubectl</span>, <span class="tok">helm</span>, <span class="tok">psql</span>, <span class="tok">redis-cli</span>, <span class="tok">aws</span>, và Docker dùng các biến đó để tới container cục bộ.</p></div>
         </div>
         <div class="callout reveal r6"><span class="b">lưu ý —</span> AWS SDK và CLI cần được truyền endpoint rõ ràng (<span class="tok">--endpoint-url "$AWS_ENDPOINT_URL"</span>); chúng không tự phát hiện endpoint. Biến là theo từng shell, nên hãy chạy lại <span class="tok">eval</span> trong mỗi terminal mới.</div>
       </div>
@@ -436,7 +441,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
         <h1 class="h2 reveal r2">Ba chi tiết nối dây đáng biết</h1>
         <div class="steps">
           <div class="step reveal r3"><div class="ic">IMAGE → CLUSTER</div><p>Bạn push tới <span class="tok">localhost:5001</span>. Registry cũng nằm trên mạng <span class="tok">kind</span>, và mỗi node có một containerd mirror — nên node pull cùng tag qua mạng đó.</p></div>
-          <div class="step reveal r4"><div class="ic">AWS API TỪ POD</div><p>Pod gọi thẳng <span class="tok">fogstack-emulator:4566</span> — không đi vòng qua host. Emulator giữ Docker socket để launch backing container của nó. OpenSearch được bridge tương tự; Postgres &amp; Dashboards chỉ mở phía host.</p></div>
+          <div class="step reveal r4"><div class="ic">BACKEND TỪ POD</div><p>App pod chạm Postgres và Redis trên mạng <span class="tok">kind</span> qua <span class="tok">fogstack-postgres:5432</span> và <span class="tok">fogstack-redis:6379</span>. Các chart ví dụ expose AWS và OpenSearch qua ExternalName Services, nên traffic vẫn ở local.</p></div>
           <div class="step reveal r5"><div class="ic">LOAD BALANCER</div><p><span class="tok">cloud-provider-kind</span> theo dõi Service <span class="tok">LoadBalancer</span> và chạy một container LB cho mỗi service, publish một port <span class="tok">localhost</span>. Trên Docker Desktop, published port đó là đường vào đáng tin cậy.</p></div>
         </div>
         <div class="note reveal r6" style="margin-top:30px">Port <span class="tok">localhost</span> được publish rất quan trọng vì ingress IP được cấp thường không route trực tiếp được từ host trên Docker Desktop.</div>
@@ -452,8 +457,8 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
         <div class="grid-2">
           <div class="card reveal r3">
             <div class="ic">MINIMAL · trường hợp phổ biến</div>
-            <h3>Kubernetes, registry, database</h3>
-            <p>Bộ thành phần mà hầu hết quá trình phát triển cần, và khởi động nhanh. Đây là thứ <span class="tok">fog up</span> launch theo mặc định.</p>
+            <h3>Kubernetes, registry, datastore</h3>
+            <p>Bộ thành phần mà hầu hết quá trình phát triển cần: cluster, vòng lặp image, Postgres, và Redis. Đây là thứ <span class="tok">fog up</span> launch theo mặc định.</p>
           </div>
           <div class="card reveal r4">
             <div class="ic">FULL · khi có AWS trong cuộc</div>
@@ -482,6 +487,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
           <div class="card reveal r4">
             <div class="ic">Docker volumes · dữ liệu thật</div>
             <div class="vol">fogstack-pgdata <span>các dòng database</span></div>
+            <div class="vol">fogstack-redis-data <span>cache key</span></div>
             <div class="vol">fogstack-emulator-data <span>bucket · queue</span></div>
             <div class="vol">fogstack-opensearch-data <span>index</span></div>
             <p style="margin-top:16px;color:var(--faint);font-size:21px">Đây là thứ bạn backup trước khi rebuild sạch.</p>
@@ -531,8 +537,8 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
         <div class="eyebrow reveal r1">Đọc tiếp</div>
         <h1 class="h2 reveal r2">Đi sâu vào <span class="accent">tài liệu</span></h1>
         <div class="docs">
-          <div class="doc reveal r3"><span class="k">tutorial</span><span class="d">Ứng dụng đầu tiên <small>— từ <code>fog up</code> tới app đã deploy</small></span></div>
-          <div class="doc reveal r3"><span class="k">connect</span><span class="d">Kết nối dự án của bạn <small>— Terraform, SDK, k8s, Postgres</small></span></div>
+          <div class="doc reveal r3"><span class="k">tutorial</span><span class="d">Ứng dụng đầu tiên <small>— sample app và full-tour app</small></span></div>
+          <div class="doc reveal r3"><span class="k">connect</span><span class="d">Kết nối dự án của bạn <small>— Terraform, SDK, k8s, Postgres, Redis</small></span></div>
           <div class="doc reveal r4"><span class="k">aws-recipes</span><span class="d">AWS Recipes <small>— S3, SQS, IAM, Lambda, OpenSearch</small></span></div>
           <div class="doc reveal r4"><span class="k">runbook</span><span class="d">Runbook <small>— start / stop / status hằng ngày</small></span></div>
           <div class="doc reveal r5"><span class="k">playbook</span><span class="d">Playbook xử lý sự cố <small>— khi có thứ bị kẹt</small></span></div>

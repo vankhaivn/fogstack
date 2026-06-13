@@ -263,7 +263,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
 
     <!-- ============ SLIDE 1 — TITLE ============ -->
     <section class="slide s-title active visible">
-      <div class="chrome reveal r1"><span><b>fogstack</b> · architecture</span><span>host-isolated local cloud</span><span>v1.0.0-beta.1</span></div>
+      <div class="chrome reveal r1"><span><b>fogstack</b> · architecture</span><span>host-isolated local cloud</span><span>v1.0.0</span></div>
       <div class="term reveal r3">
         <div class="bar"><i></i><i></i><i></i><span>~/fogstack — zsh</span></div>
         <div class="body">
@@ -278,7 +278,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
         <div class="sub reveal r4">Architecture — how the local<br>cloud fits together</div>
       </div>
       <div class="foot reveal r5">
-        <span>kind · registry · postgres · aws-compatible api</span>
+        <span>kind · registry · postgres · redis · aws-compatible api</span>
         <span class="pill"><span class="dot"></span>never touches ~/.kube or ~/.aws</span>
       </div>
     </section>
@@ -289,7 +289,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
         <div class="slide-chrome reveal r1"><span class="brand"><b>fogstack</b> · architecture</span><span class="pg">02 / 12</span></div>
         <div class="eyebrow reveal r1">What it is</div>
         <h1 class="h2 reveal r2">AWS-shaped endpoints, <span class="accent">on your machine</span></h1>
-        <p class="lead reveal r3">fogstack gives a personal project a <b>Kubernetes cluster</b>, an <b>image registry</b>, a <b>Postgres database</b>, and optionally an <b>AWS-compatible API</b> and <b>OpenSearch</b> — so you can develop and wire integrations without spending cloud money or touching a real account.</p>
+        <p class="lead reveal r3">fogstack gives a personal project a <b>Kubernetes cluster</b>, an <b>image registry</b>, <b>Postgres</b>, <b>Redis</b>, and optionally an <b>AWS-compatible API</b> and <b>OpenSearch</b> — so you can develop and wire integrations without spending cloud money or touching a real account.</p>
         <div class="rule-card reveal r4">
           <div class="tag">The one rule</div>
           <div class="txt">A fogstack command must <em>never</em> read or write your <span class="tok">~/.kube</span> or <span class="tok">~/.aws</span>, and <em>never</em> reach a real AWS account. Everything else in the design follows from this.</div>
@@ -308,7 +308,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
           <div class="plane host reveal r3">
             <span class="plabel">Host shell</span>
             <div class="row"><span class="tok">eval "$(fog endpoints)"</span><span class="arrow">→</span>
-              <span class="vars">KUBECONFIG · REGISTRY · POSTGRES_URL · AWS_ENDPOINT_URL (full)</span></div>
+              <span class="vars">KUBECONFIG · REGISTRY · POSTGRES_URL · REDIS_URL · AWS_ENDPOINT_URL (full)</span></div>
           </div>
           <div class="flow reveal r4">▼</div>
           <div class="plane docker reveal r4">
@@ -318,6 +318,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
                 <div class="nlabel">default network</div>
                 <div class="chips">
                   <span class="chip">postgres <span class="port">:5432</span></span>
+                  <span class="chip">redis <span class="port">:6379</span></span>
                   <span class="chip muted">dashboards <span class="port">:5601</span> · full</span>
                 </div>
               </div>
@@ -326,6 +327,8 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
                 <div class="chips">
                   <span class="chip">control-plane + 2 workers</span>
                   <span class="chip">registry <span class="port">:5000</span></span>
+                  <span class="chip">postgres <span class="port">:5432</span></span>
+                  <span class="chip">redis <span class="port">:6379</span></span>
                   <span class="chip">emulator <span class="port">:4566</span></span>
                   <span class="chip">opensearch <span class="port">:9200</span></span>
                   <span class="chip muted">load balancer containers</span>
@@ -339,7 +342,8 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
             <span class="plabel">Inside the cluster</span>
             <div class="row">
               <div>your pods <span class="a">→</span> <b>Service (LoadBalancer)</b> <span class="a">→</span> local LB container <span class="a">→</span> localhost port</div>
-              <div>your pods <span class="a">→</span> <b>http://fogstack-emulator:4566</b> &nbsp;·&nbsp; <b>http://fogstack-opensearch:9200</b></div>
+              <div>your pods <span class="a">→</span> <b>fogstack-postgres:5432</b> &nbsp;·&nbsp; <b>fogstack-redis:6379</b></div>
+              <div>your pods <span class="a">→</span> <b>ExternalName Services</b> <span class="a">→</span> fogstack-emulator / fogstack-opensearch</div>
             </div>
           </div>
         </div>
@@ -357,12 +361,13 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
             <div class="group-label"><span class="pill blue" style="font-size:18px;padding:6px 16px">minimal</span><span class="ln"></span></div>
             <div class="svc"><span class="nm">kind cluster<small>1 control-plane + 2 workers</small></span><span class="pt">k8s</span></div>
             <div class="svc"><span class="nm">Local registry<small>push images, nodes pull from it</small></span><span class="pt">:5001</span></div>
-            <div class="svc"><span class="nm">Postgres<small>host-side dev database</small></span><span class="pt">:5432</span></div>
+            <div class="svc"><span class="nm">Postgres<small>host + in-cluster dev database</small></span><span class="pt">:5432</span></div>
+            <div class="svc"><span class="nm">Redis<small>host + in-cluster cache</small></span><span class="pt">:6379</span></div>
             <div class="svc"><span class="nm">Load balancer controller<small>cloud-provider-kind</small></span><span class="pt">LB</span></div>
           </div>
           <div class="card reveal r4">
             <div class="group-label"><span class="pill" style="font-size:18px;padding:6px 16px">full &nbsp;(+ minimal)</span><span class="ln"></span></div>
-            <div class="svc"><span class="nm">AWS-compatible API<small>also fogstack-emulator:4566 in-cluster</small></span><span class="pt">:4566</span></div>
+            <div class="svc"><span class="nm">AWS-compatible API<small>via ExternalName in example charts</small></span><span class="pt">:4566</span></div>
             <div class="svc"><span class="nm">OpenSearch<small>local log / document store</small></span><span class="pt">:9200</span></div>
             <div class="svc"><span class="nm">OpenSearch Dashboards<small>browse indices in a UI</small></span><span class="pt">:5601</span></div>
           </div>
@@ -422,7 +427,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
         <div class="steps">
           <div class="step reveal r3"><div class="n">1</div><h3><code>fog up</code></h3><p>Starts or reuses the containers for the chosen profile and waits for health.</p></div>
           <div class="step reveal r4"><div class="n">2</div><h3><code>eval "$(fog endpoints)"</code></h3><p>Exports the connection variables into your current shell.</p></div>
-          <div class="step reveal r5"><div class="n">3</div><h3>your tools connect</h3><p><span class="tok">kubectl</span>, <span class="tok">helm</span>, <span class="tok">psql</span>, <span class="tok">aws</span>, and Docker use those variables to reach the local containers.</p></div>
+          <div class="step reveal r5"><div class="n">3</div><h3>your tools connect</h3><p><span class="tok">kubectl</span>, <span class="tok">helm</span>, <span class="tok">psql</span>, <span class="tok">redis-cli</span>, <span class="tok">aws</span>, and Docker use those variables to reach the local containers.</p></div>
         </div>
         <div class="callout reveal r6"><span class="b">note —</span> AWS SDKs and the CLI must be given the endpoint explicitly (<span class="tok">--endpoint-url "$AWS_ENDPOINT_URL"</span>); they do not discover it. Variables are per-shell, so re-run the <span class="tok">eval</span> in each new terminal.</div>
       </div>
@@ -436,7 +441,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
         <h1 class="h2 reveal r2">Three wiring details worth knowing</h1>
         <div class="steps">
           <div class="step reveal r3"><div class="ic">IMAGES → CLUSTER</div><p>You push to <span class="tok">localhost:5001</span>. The registry also sits on the <span class="tok">kind</span> network, and each node has a containerd mirror — so nodes pull the same tag over that network.</p></div>
-          <div class="step reveal r4"><div class="ic">AWS API FROM PODS</div><p>A pod calls <span class="tok">fogstack-emulator:4566</span> directly — no host round-trip. The emulator holds the Docker socket to launch its own backing containers. OpenSearch is bridged the same way; Postgres &amp; Dashboards are host-only.</p></div>
+          <div class="step reveal r4"><div class="ic">BACKENDS FROM PODS</div><p>App pods reach Postgres and Redis on the <span class="tok">kind</span> network as <span class="tok">fogstack-postgres:5432</span> and <span class="tok">fogstack-redis:6379</span>. Example charts expose AWS and OpenSearch through ExternalName Services, so traffic still stays local.</p></div>
           <div class="step reveal r5"><div class="ic">LOAD BALANCER</div><p><span class="tok">cloud-provider-kind</span> watches <span class="tok">LoadBalancer</span> Services and runs one LB container each, publishing a <span class="tok">localhost</span> port. On Docker Desktop that published port is the reliable way in.</p></div>
         </div>
         <div class="note reveal r6" style="margin-top:30px">The published <span class="tok">localhost</span> port matters because the assigned ingress IP is often not directly routable from the host on Docker Desktop.</div>
@@ -452,8 +457,8 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
         <div class="grid-2">
           <div class="card reveal r3">
             <div class="ic">MINIMAL · the common case</div>
-            <h3>Kubernetes, registry, database</h3>
-            <p>The set most development needs, and it starts quickly. This is what <span class="tok">fog up</span> launches by default.</p>
+            <h3>Kubernetes, registry, datastores</h3>
+            <p>The set most development needs: cluster, image loop, Postgres, and Redis. This is what <span class="tok">fog up</span> launches by default.</p>
           </div>
           <div class="card reveal r4">
             <div class="ic">FULL · when AWS is in play</div>
@@ -482,6 +487,7 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
           <div class="card reveal r4">
             <div class="ic">Docker volumes · the real data</div>
             <div class="vol">fogstack-pgdata <span>database rows</span></div>
+            <div class="vol">fogstack-redis-data <span>cache keys</span></div>
             <div class="vol">fogstack-emulator-data <span>buckets · queues</span></div>
             <div class="vol">fogstack-opensearch-data <span>indices</span></div>
             <p style="margin-top:16px;color:var(--faint);font-size:21px">This is what you back up before a clean rebuild.</p>
@@ -531,8 +537,8 @@ body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:r
         <div class="eyebrow reveal r1">Read next</div>
         <h1 class="h2 reveal r2">Dive into the <span class="accent">docs</span></h1>
         <div class="docs">
-          <div class="doc reveal r3"><span class="k">tutorial</span><span class="d">Your First App <small>— from <code>fog up</code> to a deployed app</small></span></div>
-          <div class="doc reveal r3"><span class="k">connect</span><span class="d">Connect Your Project <small>— Terraform, SDKs, k8s, Postgres</small></span></div>
+          <div class="doc reveal r3"><span class="k">tutorial</span><span class="d">Your First App <small>— sample app plus full-tour app</small></span></div>
+          <div class="doc reveal r3"><span class="k">connect</span><span class="d">Connect Your Project <small>— Terraform, SDKs, k8s, Postgres, Redis</small></span></div>
           <div class="doc reveal r4"><span class="k">aws-recipes</span><span class="d">AWS Recipes <small>— S3, SQS, IAM, Lambda, OpenSearch</small></span></div>
           <div class="doc reveal r4"><span class="k">runbook</span><span class="d">Runbook <small>— everyday start / stop / status</small></span></div>
           <div class="doc reveal r5"><span class="k">playbook</span><span class="d">Troubleshooting Playbook <small>— when something is stuck</small></span></div>
