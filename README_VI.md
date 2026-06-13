@@ -128,6 +128,7 @@ Toolbox đã pin version:
 - [Troubleshooting Playbook](docs/playbook.md) — làm gì khi lệnh fail hoặc stack có vẻ kẹt.
 - [FAQ](docs/faq.md) — dữ liệu nào còn lại sau khi stop/reboot, nâng cấp, nền tảng hỗ trợ, cách ly host.
 - [Reference](docs/reference.md) — lệnh CLI, biến endpoint, cấu hình `.env`, container, port và volume.
+- [Changelog](CHANGELOG.md) — các thay đổi người dùng nhìn thấy theo từng release.
 
 Các tài liệu trong `docs/` viết bằng tiếng Anh.
 

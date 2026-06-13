@@ -127,6 +127,7 @@ Pinned toolbox:
 - [Troubleshooting Playbook](docs/playbook.md) — what to do when a command fails or the stack looks stuck.
 - [FAQ](docs/faq.md) — what survives a stop or reboot, upgrades, platform support, host isolation.
 - [Reference](docs/reference.md) — CLI commands, endpoint variables, `.env` settings, containers, ports, and volumes.
+- [Changelog](CHANGELOG.md) — user-facing changes by release.
 
 ## Limits
 
