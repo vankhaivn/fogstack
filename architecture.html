@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>fogstack — Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ===========================================
+   THEME TOKENS — "Fog Terminal"
+   Change these to re-skin the whole deck.
+   =========================================== */
+:root{
+  --bg:#0a0f1a; --bg2:#0d1422;
+  --panel:rgba(13,21,36,.66); --panel-2:rgba(17,26,44,.8);
+  --fog:#6fe7d2;            /* cyan-teal accent */
+  --fog2:#5aa9ff;           /* mist-blue accent */
+  --ink:#eaf2ff; --dim:#8b9bb4; --faint:#5b6b85;
+  --line:#1e2c47; --line-2:#27395c;
+  --font-display:'Sora',sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+  --ease:cubic-bezier(.2,.8,.2,1);
+  --stage-bg:#070b12; --slide-bg:transparent;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE
+   =========================================== */
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--stage-bg,#000)}
+.deck-viewport{position:fixed;inset:0;overflow:hidden;background:var(--stage-bg,#000)}
+.deck-stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;transform-origin:0 0;
+  background:
+    radial-gradient(1200px 560px at 82% 8%, rgba(111,231,210,.14), transparent 60%),
+    radial-gradient(1000px 640px at 6% 96%, rgba(90,169,255,.12), transparent 60%),
+    linear-gradient(165deg,var(--bg) 0%,var(--bg2) 100%);}
+.slide{position:absolute;inset:0;width:1920px;height:1080px;overflow:hidden;display:block;
+  visibility:hidden;opacity:0;pointer-events:none;background:var(--slide-bg,#fff)}
+.slide.active,.slide.visible{visibility:visible;opacity:1;pointer-events:auto;z-index:1}
+img,video,canvas,svg{max-width:100%;max-height:100%}
+@media print{
+  html,body{width:1920px;height:auto;overflow:visible;background:#070b12}
+  .deck-viewport{position:static;overflow:visible}
+  .deck-stage{position:static;width:auto;height:auto;transform:none!important}
+  .slide{position:relative;display:block!important;visibility:visible!important;opacity:1!important;
+    width:1920px;height:1080px;break-after:page;page-break-after:always}
+  .slide:last-child{break-after:auto}
+  .deck-controls,.edit-hotzone,.edit-toggle,.edit-hint{display:none!important}
+}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.2s!important}}
+
+/* ===========================================
+   ATMOSPHERE — persistent fog + dot grid behind slides
+   =========================================== */
+.atmosphere{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.atmosphere .dots{position:absolute;inset:0;
+  background-image:radial-gradient(rgba(255,255,255,.05) 1.5px,transparent 1.5px);
+  background-size:46px 46px;
+  -webkit-mask-image:linear-gradient(180deg,transparent,#000 22%,#000 78%,transparent);
+          mask-image:linear-gradient(180deg,transparent,#000 22%,#000 78%,transparent)}
+.atmosphere .fog{position:absolute;left:-6%;right:-6%;height:300px;filter:blur(60px);opacity:.42;
+  animation:drift 16s ease-in-out infinite alternate}
+.atmosphere .f1{top:60px;background:radial-gradient(60% 100% at 72% 50%,rgba(111,231,210,.34),transparent)}
+.atmosphere .f2{top:430px;background:radial-gradient(60% 100% at 28% 50%,rgba(90,169,255,.3),transparent);animation-duration:21s}
+.atmosphere .f3{top:780px;background:radial-gradient(55% 100% at 62% 50%,rgba(111,231,210,.22),transparent);animation-duration:26s}
+@keyframes drift{from{transform:translateX(-46px)}to{transform:translateX(46px)}}
+
+/* ===========================================
+   SHARED SLIDE LAYOUT
+   =========================================== */
+.wrap{position:absolute;inset:0;padding:92px 120px 104px;display:flex;flex-direction:column;color:var(--ink);font-family:var(--font-display)}
+.slide-chrome{display:flex;justify-content:space-between;align-items:center;font-family:var(--font-mono);
+  font-size:20px;letter-spacing:.04em;color:var(--dim);margin-bottom:40px}
+.slide-chrome .brand b{color:var(--fog);font-weight:500}
+.slide-chrome .pg{color:var(--faint)}
+.eyebrow{font-family:var(--font-mono);font-size:23px;letter-spacing:.26em;text-transform:uppercase;color:var(--fog);margin-bottom:18px}
+.h2{font-weight:700;font-size:74px;line-height:1.02;letter-spacing:-.02em;margin:0 0 8px}
+.h2 .accent{color:var(--fog)}
+.lead{font-size:30px;line-height:1.5;color:var(--dim);max-width:1380px;margin-top:18px;font-weight:400}
+.lead b{color:var(--ink);font-weight:600}
+
+/* code / inline tokens */
+code,.mono{font-family:var(--font-mono)}
+.tok{font-family:var(--font-mono);color:var(--fog);background:rgba(111,231,210,.08);
+  border:1px solid var(--line-2);border-radius:7px;padding:2px 9px;font-size:.86em;white-space:nowrap}
+.tok.blue{color:var(--fog2);background:rgba(90,169,255,.08)}
+
+/* cards */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:30px 32px;
+  backdrop-filter:blur(8px)}
+.card h3{font-size:30px;font-weight:600;margin:0 0 12px;letter-spacing:-.01em}
+.card p{font-size:23px;line-height:1.5;color:var(--dim);font-weight:400}
+.card .ic{font-family:var(--font-mono);font-size:20px;color:var(--fog);margin-bottom:16px;letter-spacing:.12em}
+
+/* pills */
+.pill{display:inline-flex;align-items:center;gap:10px;border:1px solid var(--line-2);border-radius:999px;
+  padding:11px 22px;font-family:var(--font-mono);font-size:21px;color:var(--fog)}
+.pill.blue{color:var(--fog2)}
+.pill .dot{width:9px;height:9px;border-radius:50%;background:currentColor;box-shadow:0 0 12px currentColor}
+
+/* terminal window */
+.term{border:1px solid var(--line-2);border-radius:14px;background:rgba(7,12,22,.72);
+  box-shadow:0 30px 80px rgba(0,0,0,.45);overflow:hidden;backdrop-filter:blur(8px)}
+.term .bar{display:flex;align-items:center;gap:10px;padding:15px 20px;border-bottom:1px solid var(--line)}
+.term .bar i{width:13px;height:13px;border-radius:50%;background:#33405c}
+.term .bar i:nth-child(1){background:#ff5f56}.term .bar i:nth-child(2){background:#ffbd2e}.term .bar i:nth-child(3){background:#27c93f}
+.term .bar span{margin-left:10px;font-family:var(--font-mono);font-size:17px;color:var(--faint)}
+.term .body{padding:24px 26px;font-family:var(--font-mono);font-size:22px;line-height:1.85}
+.term .body .p{color:var(--fog)}.term .body .c{color:var(--ink)}.term .body .o{color:var(--faint)}
+.cursor{display:inline-block;width:12px;height:22px;background:var(--fog);margin-left:4px;vertical-align:-3px;animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* ===========================================
+   REVEAL ANIMATIONS (re-fire when slide becomes visible)
+   =========================================== */
+.reveal{opacity:0;transform:translateY(26px);transition:opacity .6s var(--ease),transform .6s var(--ease)}
+.slide.visible .reveal{opacity:1;transform:none}
+.slide.visible .r1{transition-delay:.05s}.slide.visible .r2{transition-delay:.13s}
+.slide.visible .r3{transition-delay:.21s}.slide.visible .r4{transition-delay:.29s}
+.slide.visible .r5{transition-delay:.37s}.slide.visible .r6{transition-delay:.45s}
+.slide.visible .r7{transition-delay:.53s}.slide.visible .r8{transition-delay:.61s}
+
+/* ===========================================
+   SLIDE 1 — TITLE
+   =========================================== */
+.s-title .chrome{position:absolute;left:120px;right:120px;top:84px;display:flex;justify-content:space-between;
+  font-family:var(--font-mono);font-size:21px;color:var(--dim)}
+.s-title .chrome b{color:var(--fog);font-weight:500}
+.s-title .term{position:absolute;left:120px;top:312px;width:780px}
+.s-title .hero{position:absolute;right:120px;top:336px;text-align:right;max-width:920px}
+.s-title .kick{font-family:var(--font-mono);font-size:24px;letter-spacing:.26em;text-transform:uppercase;color:var(--fog);margin-bottom:20px}
+.s-title .big{font-weight:800;font-size:208px;line-height:.9;letter-spacing:-.03em;color:var(--ink)}
+.s-title .big span{color:var(--fog)}
+.s-title .sub{font-size:40px;font-weight:400;color:var(--dim);margin-top:24px;line-height:1.3}
+.s-title .foot{position:absolute;left:120px;right:120px;bottom:80px;display:flex;justify-content:space-between;align-items:center;
+  font-family:var(--font-mono);font-size:20px;color:var(--dim)}
+
+/* ===========================================
+   SLIDE 2 — WHAT IT IS / THE RULE
+   =========================================== */
+.rule-card{margin-top:34px;border:1px solid var(--line-2);border-left:4px solid var(--fog);border-radius:16px;
+  background:linear-gradient(100deg,rgba(111,231,210,.08),rgba(13,21,36,.5));padding:34px 38px;max-width:1500px}
+.rule-card .tag{font-family:var(--font-mono);font-size:20px;letter-spacing:.2em;text-transform:uppercase;color:var(--fog);margin-bottom:14px}
+.rule-card .txt{font-size:40px;line-height:1.32;font-weight:600;letter-spacing:-.01em}
+.rule-card .txt em{color:var(--fog);font-style:normal}
+.note{margin-top:26px;font-size:24px;color:var(--faint)}
+
+/* ===========================================
+   SLIDE 3 — BIG PICTURE DIAGRAM
+   =========================================== */
+.diagram{flex:1;display:flex;flex-direction:column;justify-content:center;gap:14px;margin-top:6px}
+.plane{border:1px solid var(--line);border-radius:16px;background:var(--panel);padding:22px 28px;position:relative}
+.plane .plabel{position:absolute;top:-13px;left:26px;background:var(--bg2);padding:0 12px;
+  font-family:var(--font-mono);font-size:18px;letter-spacing:.18em;text-transform:uppercase;color:var(--fog)}
+.plane.host .row{display:flex;align-items:center;gap:18px;font-family:var(--font-mono);font-size:23px;color:var(--ink);flex-wrap:wrap}
+.plane.host .arrow{color:var(--fog)}
+.plane.host .vars{color:var(--dim)}
+.nets{display:grid;grid-template-columns:1fr 1.55fr;gap:20px;margin-top:6px}
+.net{border:1px dashed var(--line-2);border-radius:13px;padding:18px 22px}
+.net .nlabel{font-family:var(--font-mono);font-size:19px;letter-spacing:.06em;color:var(--fog2);margin-bottom:14px}
+.net.kindnet .nlabel{color:var(--fog)}
+.chips{display:flex;flex-wrap:wrap;gap:10px}
+.chip{font-family:var(--font-mono);font-size:20px;color:var(--ink);background:rgba(17,26,44,.7);
+  border:1px solid var(--line-2);border-radius:9px;padding:9px 14px}
+.chip .port{color:var(--fog)}
+.chip.muted{color:var(--dim)}
+.flow{display:flex;justify-content:center;color:var(--fog);font-size:22px;line-height:1}
+.plane.cluster .row{display:flex;flex-direction:column;gap:8px;font-family:var(--font-mono);font-size:22px;color:var(--dim)}
+.plane.cluster .row b{color:var(--ink);font-weight:500}
+.plane.cluster .row .a{color:var(--fog)}
+.plane .bind{position:absolute;right:26px;bottom:14px;font-family:var(--font-mono);font-size:17px;color:var(--faint)}
+
+/* ===========================================
+   GRIDS for component / isolation / etc.
+   =========================================== */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+.grid-4{display:grid;grid-template-columns:repeat(2,1fr);gap:22px;margin-top:26px}
+.group-label{font-family:var(--font-mono);font-size:21px;letter-spacing:.1em;color:var(--fog);margin-bottom:16px;display:flex;align-items:center;gap:12px}
+.group-label .ln{flex:1;height:1px;background:var(--line)}
+.svc{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid var(--line)}
+.svc:last-child{border-bottom:none}
+.svc .nm{font-size:25px;font-weight:500}
+.svc .nm small{display:block;font-size:19px;color:var(--faint);font-weight:400;margin-top:3px;font-family:var(--font-mono)}
+.svc .pt{font-family:var(--font-mono);font-size:21px;color:var(--fog);white-space:nowrap}
+
+/* numbered steps */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:30px}
+.step{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:30px 30px 34px;position:relative;overflow:hidden}
+.step .n{font-family:var(--font-mono);font-size:30px;color:var(--bg);background:var(--fog);width:54px;height:54px;border-radius:11px;
+  display:flex;align-items:center;justify-content:center;font-weight:700;margin-bottom:20px}
+.step h3{font-size:27px;font-weight:600;margin-bottom:12px}
+.step h3 code{font-size:22px;color:var(--fog)}
+.step p{font-size:22px;line-height:1.5;color:var(--dim)}
+.callout{margin-top:26px;display:flex;align-items:center;gap:16px;font-size:24px;color:var(--dim)}
+.callout .b{color:var(--fog);font-family:var(--font-mono);font-size:21px}
+
+/* two-col verify list */
+.why{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:28px}
+.why .card{border-left:4px solid var(--fog)}
+.why .card.blue{border-left-color:var(--fog2)}
+.verify-strip{margin-top:30px;display:flex;flex-wrap:wrap;gap:14px}
+
+/* lifecycle two columns */
+.life{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+.life .card .ic{color:var(--fog2)}
+.life .vol{font-family:var(--font-mono);font-size:21px;color:var(--ink);padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+.life .vol:last-child{border-bottom:none}
+.life .vol span{color:var(--faint)}
+.cmd-row{margin-top:26px;display:flex;gap:18px;flex-wrap:wrap}
+.cmd-chip{font-family:var(--font-mono);font-size:22px;border:1px solid var(--line-2);border-radius:11px;padding:14px 20px;color:var(--dim)}
+.cmd-chip b{color:var(--fog)}
+
+/* limits two-col */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:28px}
+.split .card.good{border-top:3px solid var(--fog)}
+.split .card.warn{border-top:3px solid var(--fog2)}
+.split ul{list-style:none;margin-top:6px}
+.split li{font-size:24px;line-height:1.42;color:var(--dim);padding:10px 0 10px 30px;position:relative}
+.split li::before{content:"›";position:absolute;left:4px;color:var(--fog);font-family:var(--font-mono)}
+.split .warn li::before{color:var(--fog2)}
+
+/* closing docs list */
+.docs{display:grid;grid-template-columns:1fr 1fr;gap:16px 40px;margin-top:30px;max-width:1500px}
+.doc{display:flex;align-items:center;gap:18px;padding:16px 0;border-bottom:1px solid var(--line)}
+.doc .k{font-family:var(--font-mono);font-size:19px;color:var(--fog);width:130px;flex:none}
+.doc .d{font-size:24px;color:var(--ink)}
+.doc .d small{color:var(--faint);font-size:20px}
+
+/* ===========================================
+   FIXED CHROME (outside scaled stage)
+   =========================================== */
+.deck-controls{position:fixed;left:0;right:0;bottom:0;z-index:1000;pointer-events:none}
+.progress{height:3px;background:var(--fog);width:0;transition:width .4s var(--ease);box-shadow:0 0 14px var(--fog)}
+.counter{position:fixed;right:22px;bottom:18px;z-index:1000;font-family:var(--font-mono);font-size:15px;color:var(--dim);pointer-events:none}
+.counter b{color:var(--fog)}
+.hint-nav{position:fixed;left:22px;bottom:18px;z-index:1000;font-family:var(--font-mono);font-size:14px;color:var(--faint);pointer-events:none}
+
+/* inline editing */
+.edit-hotzone{position:fixed;top:0;left:0;width:80px;height:80px;z-index:10000;cursor:pointer}
+.edit-toggle{position:fixed;top:18px;left:18px;z-index:10001;width:46px;height:46px;border-radius:11px;
+  border:1px solid var(--line-2);background:rgba(13,21,36,.9);color:var(--fog);font-size:20px;cursor:pointer;
+  opacity:0;pointer-events:none;transition:opacity .3s ease}
+.edit-toggle.show,.edit-toggle.active{opacity:1;pointer-events:auto}
+.edit-toggle.active{background:var(--fog);color:var(--bg)}
+.edit-hint{position:fixed;top:20px;left:78px;z-index:10001;font-family:var(--font-mono);font-size:14px;color:var(--dim);
+  background:rgba(13,21,36,.9);border:1px solid var(--line);border-radius:8px;padding:8px 12px;opacity:0;transition:opacity .3s;pointer-events:none}
+.edit-hint.show{opacity:1}
+body.edit-mode [contenteditable]{outline:1px dashed var(--line-2);outline-offset:4px;border-radius:4px}
+body.edit-mode [contenteditable]:hover{outline-color:var(--fog)}
+body.edit-mode [contenteditable]:focus{outline:2px solid var(--fog);background:rgba(111,231,210,.06)}
+</style>
+</head>
+<body>
+<div class="deck-viewport">
+  <main class="deck-stage" id="stage">
+    <!-- persistent atmospheric background -->
+    <div class="atmosphere"><div class="dots"></div><div class="fog f1"></div><div class="fog f2"></div><div class="fog f3"></div></div>
+
+    <div class="slides" id="slides">
+
+    <!-- ============ SLIDE 1 — TITLE ============ -->
+    <section class="slide s-title active visible">
+      <div class="chrome reveal r1"><span><b>fogstack</b> · architecture</span><span>host-isolated local cloud</span><span>v1.0.0-beta.1</span></div>
+      <div class="term reveal r3">
+        <div class="bar"><i></i><i></i><i></i><span>~/fogstack — zsh</span></div>
+        <div class="body">
+          <div><span class="p">❯</span> <span class="c">fog up</span></div>
+          <div class="o">[fogstack] waiting for minimal profile health</div>
+          <div><span class="p">❯</span> <span class="c">eval "$(fog endpoints)"</span><span class="cursor"></span></div>
+        </div>
+      </div>
+      <div class="hero">
+        <div class="kick reveal r2">How it works</div>
+        <div class="big reveal r3">fog<span>stack</span></div>
+        <div class="sub reveal r4">Architecture — how the local<br>cloud fits together</div>
+      </div>
+      <div class="foot reveal r5">
+        <span>kind · registry · postgres · aws-compatible api</span>
+        <span class="pill"><span class="dot"></span>never touches ~/.kube or ~/.aws</span>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 2 — WHAT IT IS ============ -->
+    <section class="slide">
+      <div class="wrap">
+        <div class="slide-chrome reveal r1"><span class="brand"><b>fogstack</b> · architecture</span><span class="pg">02 / 12</span></div>
+        <div class="eyebrow reveal r1">What it is</div>
+        <h1 class="h2 reveal r2">AWS-shaped endpoints, <span class="accent">on your machine</span></h1>
+        <p class="lead reveal r3">fogstack gives a personal project a <b>Kubernetes cluster</b>, an <b>image registry</b>, a <b>Postgres database</b>, and optionally an <b>AWS-compatible API</b> and <b>OpenSearch</b> — so you can develop and wire integrations without spending cloud money or touching a real account.</p>
+        <div class="rule-card reveal r4">
+          <div class="tag">The one rule</div>
+          <div class="txt">A fogstack command must <em>never</em> read or write your <span class="tok">~/.kube</span> or <span class="tok">~/.aws</span>, and <em>never</em> reach a real AWS account. Everything else in the design follows from this.</div>
+        </div>
+        <div class="note reveal r5">A local development tool — not a production-parity environment.</div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 3 — BIG PICTURE ============ -->
+    <section class="slide">
+      <div class="wrap">
+        <div class="slide-chrome reveal r1"><span class="brand"><b>fogstack</b> · architecture</span><span class="pg">03 / 12</span></div>
+        <div class="eyebrow reveal r1">The big picture</div>
+        <h1 class="h2 reveal r2">Three planes</h1>
+        <div class="diagram">
+          <div class="plane host reveal r3">
+            <span class="plabel">Host shell</span>
+            <div class="row"><span class="tok">eval "$(fog endpoints)"</span><span class="arrow">→</span>
+              <span class="vars">KUBECONFIG · REGISTRY · POSTGRES_URL · AWS_ENDPOINT_URL (full)</span></div>
+          </div>
+          <div class="flow reveal r4">▼</div>
+          <div class="plane docker reveal r4">
+            <span class="plabel">Docker engine</span>
+            <div class="nets">
+              <div class="net">
+                <div class="nlabel">default network</div>
+                <div class="chips">
+                  <span class="chip">postgres <span class="port">:5432</span></span>
+                  <span class="chip muted">dashboards <span class="port">:5601</span> · full</span>
+                </div>
+              </div>
+              <div class="net kindnet">
+                <div class="nlabel">"kind" network</div>
+                <div class="chips">
+                  <span class="chip">control-plane + 2 workers</span>
+                  <span class="chip">registry <span class="port">:5000</span></span>
+                  <span class="chip">emulator <span class="port">:4566</span></span>
+                  <span class="chip">opensearch <span class="port">:9200</span></span>
+                  <span class="chip muted">load balancer containers</span>
+                </div>
+              </div>
+            </div>
+            <div class="bind">all host ports bind 127.0.0.1 only</div>
+          </div>
+          <div class="flow reveal r5">▼</div>
+          <div class="plane cluster reveal r5">
+            <span class="plabel">Inside the cluster</span>
+            <div class="row">
+              <div>your pods <span class="a">→</span> <b>Service (LoadBalancer)</b> <span class="a">→</span> local LB container <span class="a">→</span> localhost port</div>
+              <div>your pods <span class="a">→</span> <b>http://fogstack-emulator:4566</b> &nbsp;·&nbsp; <b>http://fogstack-opensearch:9200</b></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 4 — COMPONENTS ============ -->
+    <section class="slide">
+      <div class="wrap">
+        <div class="slide-chrome reveal r1"><span class="brand"><b>fogstack</b> · architecture</span><span class="pg">04 / 12</span></div>
+        <div class="eyebrow reveal r1">Components</div>
+        <h1 class="h2 reveal r2">What runs in each profile</h1>
+        <div class="grid-2">
+          <div class="card reveal r3">
+            <div class="group-label"><span class="pill blue" style="font-size:18px;padding:6px 16px">minimal</span><span class="ln"></span></div>
+            <div class="svc"><span class="nm">kind cluster<small>1 control-plane + 2 workers</small></span><span class="pt">k8s</span></div>
+            <div class="svc"><span class="nm">Local registry<small>push images, nodes pull from it</small></span><span class="pt">:5001</span></div>
+            <div class="svc"><span class="nm">Postgres<small>host-side dev database</small></span><span class="pt">:5432</span></div>
+            <div class="svc"><span class="nm">Load balancer controller<small>cloud-provider-kind</small></span><span class="pt">LB</span></div>
+          </div>
+          <div class="card reveal r4">
+            <div class="group-label"><span class="pill" style="font-size:18px;padding:6px 16px">full &nbsp;(+ minimal)</span><span class="ln"></span></div>
+            <div class="svc"><span class="nm">AWS-compatible API<small>also fogstack-emulator:4566 in-cluster</small></span><span class="pt">:4566</span></div>
+            <div class="svc"><span class="nm">OpenSearch<small>local log / document store</small></span><span class="pt">:9200</span></div>
+            <div class="svc"><span class="nm">OpenSearch Dashboards<small>browse indices in a UI</small></span><span class="pt">:5601</span></div>
+          </div>
+        </div>
+        <div class="note reveal r5">Default is <span class="tok">minimal</span>; start <span class="tok">full</span> only when a project needs the AWS API or OpenSearch.</div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 5 — ISOLATION: REDIRECTS ============ -->
+    <section class="slide">
+      <div class="wrap">
+        <div class="slide-chrome reveal r1"><span class="brand"><b>fogstack</b> · architecture</span><span class="pg">05 / 12</span></div>
+        <div class="eyebrow reveal r1">Host isolation · the heart of the design</div>
+        <h1 class="h2 reveal r2">Every client is redirected away from your host</h1>
+        <p class="lead reveal r3">Before any command runs a <span class="tok">kubectl</span>, <span class="tok">aws</span>, <span class="tok">helm</span>, or <span class="tok">terraform</span> client, a guard rewrites where each one looks:</p>
+        <div class="grid-4">
+          <div class="card reveal r4"><div class="ic">KUBERNETES</div><h3>KUBECONFIG → .state/</h3><p>Points at a repo-local kubeconfig. Your host context is never read or changed — it never runs <span class="tok">kubectl config use-context</span>.</p></div>
+          <div class="card reveal r5"><div class="ic">AWS CONFIG FILES</div><h3>config &amp; credentials → .state/</h3><p><span class="tok">AWS_CONFIG_FILE</span> and <span class="tok">AWS_SHARED_CREDENTIALS_FILE</span> point inside <span class="tok">.state/</span>, not at <span class="tok">~/.aws</span>.</p></div>
+          <div class="card reveal r6"><div class="ic">CREDENTIALS</div><h3>fake, local-only</h3><p>Exports <span class="tok">test</span> / <span class="tok">test</span>, region <span class="tok">us-east-1</span>, for the process. The instance-metadata endpoint is disabled.</p></div>
+          <div class="card reveal r7"><div class="ic">REAL-ACCOUNT VARS</div><h3>removed</h3><p><span class="tok">AWS_PROFILE</span>, <span class="tok">AWS_SESSION_TOKEN</span>, <span class="tok">AWS_ROLE_ARN</span> are unset. <span class="tok">fog doctor</span> fails if a profile is still set.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 6 — ISOLATION: WHY ROBUST ============ -->
+    <section class="slide">
+      <div class="wrap">
+        <div class="slide-chrome reveal r1"><span class="brand"><b>fogstack</b> · architecture</span><span class="pg">06 / 12</span></div>
+        <div class="eyebrow reveal r1">Host isolation</div>
+        <h1 class="h2 reveal r2">Robust, <span class="accent">not best-effort</span></h1>
+        <div class="why">
+          <div class="card reveal r3">
+            <div class="ic">01 · EVERY ENTRY POINT</div>
+            <h3>The guard runs everywhere</h3>
+            <p>It is not only in the main <span class="tok">fog</span> script — the scripts that create the cluster and start the load balancer source it too. No code path reaches a client with host configuration active.</p>
+          </div>
+          <div class="card blue reveal r4">
+            <div class="ic" style="color:var(--fog2)">02 · AFTER .ENV LOADS</div>
+            <h3>The guard is re-asserted</h3>
+            <p>The <span class="tok">fog</span> script loads your <span class="tok">.env</span>, then sources the guard <b>again</b>. Even a <span class="tok">.env</span> that tried to set <span class="tok">KUBECONFIG</span> or an AWS path cannot redirect a client back at your host files.</p>
+          </div>
+        </div>
+        <div class="verify-strip reveal r5">
+          <span class="pill"><span class="dot"></span>fog doctor prints the checks</span>
+          <span class="pill"><span class="dot"></span>fog endpoints shows the files in use</span>
+          <span class="pill blue"><span class="dot"></span>every port binds 127.0.0.1 only</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 7 — REQUEST FLOW ============ -->
+    <section class="slide">
+      <div class="wrap">
+        <div class="slide-chrome reveal r1"><span class="brand"><b>fogstack</b> · architecture</span><span class="pg">07 / 12</span></div>
+        <div class="eyebrow reveal r1">Request flow</div>
+        <h1 class="h2 reveal r2">How a command reaches a local endpoint</h1>
+        <div class="steps">
+          <div class="step reveal r3"><div class="n">1</div><h3><code>fog up</code></h3><p>Starts or reuses the containers for the chosen profile and waits for health.</p></div>
+          <div class="step reveal r4"><div class="n">2</div><h3><code>eval "$(fog endpoints)"</code></h3><p>Exports the connection variables into your current shell.</p></div>
+          <div class="step reveal r5"><div class="n">3</div><h3>your tools connect</h3><p><span class="tok">kubectl</span>, <span class="tok">helm</span>, <span class="tok">psql</span>, <span class="tok">aws</span>, and Docker use those variables to reach the local containers.</p></div>
+        </div>
+        <div class="callout reveal r6"><span class="b">note —</span> AWS SDKs and the CLI must be given the endpoint explicitly (<span class="tok">--endpoint-url "$AWS_ENDPOINT_URL"</span>); they do not discover it. Variables are per-shell, so re-run the <span class="tok">eval</span> in each new terminal.</div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 8 — NETWORKING ============ -->
+    <section class="slide">
+      <div class="wrap">
+        <div class="slide-chrome reveal r1"><span class="brand"><b>fogstack</b> · architecture</span><span class="pg">08 / 12</span></div>
+        <div class="eyebrow reveal r1">Networking</div>
+        <h1 class="h2 reveal r2">Three wiring details worth knowing</h1>
+        <div class="steps">
+          <div class="step reveal r3"><div class="ic">IMAGES → CLUSTER</div><p>You push to <span class="tok">localhost:5001</span>. The registry also sits on the <span class="tok">kind</span> network, and each node has a containerd mirror — so nodes pull the same tag over that network.</p></div>
+          <div class="step reveal r4"><div class="ic">AWS API FROM PODS</div><p>A pod calls <span class="tok">fogstack-emulator:4566</span> directly — no host round-trip. The emulator holds the Docker socket to launch its own backing containers. OpenSearch is bridged the same way; Postgres &amp; Dashboards are host-only.</p></div>
+          <div class="step reveal r5"><div class="ic">LOAD BALANCER</div><p><span class="tok">cloud-provider-kind</span> watches <span class="tok">LoadBalancer</span> Services and runs one LB container each, publishing a <span class="tok">localhost</span> port. On Docker Desktop that published port is the reliable way in.</p></div>
+        </div>
+        <div class="note reveal r6" style="margin-top:30px">The published <span class="tok">localhost</span> port matters because the assigned ingress IP is often not directly routable from the host on Docker Desktop.</div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 9 — PROFILES ============ -->
+    <section class="slide">
+      <div class="wrap">
+        <div class="slide-chrome reveal r1"><span class="brand"><b>fogstack</b> · architecture</span><span class="pg">09 / 12</span></div>
+        <div class="eyebrow reveal r1">Profiles</div>
+        <h1 class="h2 reveal r2"><span class="accent">minimal</span> by default, <span class="accent">full</span> when you need AWS</h1>
+        <div class="grid-2">
+          <div class="card reveal r3">
+            <div class="ic">MINIMAL · the common case</div>
+            <h3>Kubernetes, registry, database</h3>
+            <p>The set most development needs, and it starts quickly. This is what <span class="tok">fog up</span> launches by default.</p>
+          </div>
+          <div class="card reveal r4">
+            <div class="ic">FULL · when AWS is in play</div>
+            <h3>+ AWS API, OpenSearch, Dashboards</h3>
+            <p>Adds the AWS-shaped services, which cost more memory and start time. Switch with <span class="tok">--profile full</span>.</p>
+          </div>
+        </div>
+        <div class="callout reveal r5"><span class="b">why split —</span> keeping the common case fast, and never advertising dead endpoints: <span class="tok">fog endpoints</span> deliberately omits <span class="tok">AWS_ENDPOINT_URL</span> in minimal mode.</div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 10 — STATE & LIFECYCLE ============ -->
+    <section class="slide">
+      <div class="wrap">
+        <div class="slide-chrome reveal r1"><span class="brand"><b>fogstack</b> · architecture</span><span class="pg">10 / 12</span></div>
+        <div class="eyebrow reveal r1">State &amp; lifecycle</div>
+        <h1 class="h2 reveal r2">What's disposable, what persists</h1>
+        <div class="life">
+          <div class="card reveal r3">
+            <div class="ic">.state/ · disposable config</div>
+            <div class="vol">kubeconfig.yaml <span>repo-local</span></div>
+            <div class="vol">aws-config · aws-credentials <span>fake values</span></div>
+            <div class="vol">profile <span>last <span class="tok">fog up</span></span></div>
+            <p style="margin-top:16px;color:var(--faint);font-size:21px">Safe to delete when the stack is down — <span class="tok">fog up</span> regenerates it.</p>
+          </div>
+          <div class="card reveal r4">
+            <div class="ic">Docker volumes · the real data</div>
+            <div class="vol">fogstack-pgdata <span>database rows</span></div>
+            <div class="vol">fogstack-emulator-data <span>buckets · queues</span></div>
+            <div class="vol">fogstack-opensearch-data <span>indices</span></div>
+            <p style="margin-top:16px;color:var(--faint);font-size:21px">This is what you back up before a clean rebuild.</p>
+          </div>
+        </div>
+        <div class="cmd-row reveal r5">
+          <span class="cmd-chip"><b>fog down</b> — stops containers, <b>keeps</b> data volumes</span>
+          <span class="cmd-chip"><b>fog down --volumes</b> — also <b>removes</b> the data</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 11 — LIMITS ============ -->
+    <section class="slide">
+      <div class="wrap">
+        <div class="slide-chrome reveal r1"><span class="brand"><b>fogstack</b> · architecture</span><span class="pg">11 / 12</span></div>
+        <div class="eyebrow reveal r1">Boundaries</div>
+        <h1 class="h2 reveal r2">What it enables — and what it doesn't</h1>
+        <div class="split">
+          <div class="card good reveal r3">
+            <div class="ic">ENABLES</div>
+            <ul>
+              <li>A fast, disposable, AWS-shaped local environment</li>
+              <li>Safe to run next to real company credentials</li>
+              <li>Development feedback and integration wiring</li>
+              <li>Learning the shape of AWS-adjacent workflows</li>
+            </ul>
+          </div>
+          <div class="card warn reveal r4">
+            <div class="ic" style="color:var(--fog2)">DOES NOT</div>
+            <ul>
+              <li>Give production parity</li>
+              <li>Implement every AWS service to the same depth</li>
+              <li>Enforce IAM as a real authorization boundary</li>
+              <li>Enforce real network policy</li>
+            </ul>
+          </div>
+        </div>
+        <div class="note reveal r5">The AWS-compatible emulator is young software and can change faster than AWS itself.</div>
+      </div>
+    </section>
+
+    <!-- ============ SLIDE 12 — CLOSING / DOCS ============ -->
+    <section class="slide">
+      <div class="wrap">
+        <div class="slide-chrome reveal r1"><span class="brand"><b>fogstack</b> · architecture</span><span class="pg">12 / 12</span></div>
+        <div class="eyebrow reveal r1">Read next</div>
+        <h1 class="h2 reveal r2">Dive into the <span class="accent">docs</span></h1>
+        <div class="docs">
+          <div class="doc reveal r3"><span class="k">tutorial</span><span class="d">Your First App <small>— from <code>fog up</code> to a deployed app</small></span></div>
+          <div class="doc reveal r3"><span class="k">connect</span><span class="d">Connect Your Project <small>— Terraform, SDKs, k8s, Postgres</small></span></div>
+          <div class="doc reveal r4"><span class="k">aws-recipes</span><span class="d">AWS Recipes <small>— S3, SQS, IAM, Lambda, OpenSearch</small></span></div>
+          <div class="doc reveal r4"><span class="k">runbook</span><span class="d">Runbook <small>— everyday start / stop / status</small></span></div>
+          <div class="doc reveal r5"><span class="k">playbook</span><span class="d">Troubleshooting Playbook <small>— when something is stuck</small></span></div>
+          <div class="doc reveal r5"><span class="k">faq</span><span class="d">FAQ <small>— reboot, upgrade, persistence</small></span></div>
+          <div class="doc reveal r6"><span class="k">reference</span><span class="d">Reference <small>— CLI, .env, ports, volumes</small></span></div>
+          <div class="doc reveal r6"><span class="k">readme</span><span class="d">README <small>— quickstart &amp; endpoint contract</small></span></div>
+        </div>
+        <div class="note reveal r7" style="margin-top:auto">fogstack · local AWS-shaped endpoints, host-isolated by design</div>
+      </div>
+    </section>
+
+    </div><!-- /.slides -->
+  </main>
+</div>
+
+<!-- fixed chrome outside the scaled stage -->
+<div class="deck-controls"><div class="progress" id="progress"></div></div>
+<div class="counter"><b id="curNum">01</b> / <span id="totNum">12</span></div>
+<div class="hint-nav">← → · space · F fullscreen</div>
+
+<!-- inline editing -->
+<div class="edit-hotzone" id="editHotzone"></div>
+<button class="edit-toggle" id="editToggle" title="Edit mode (E)">✏️</button>
+<div class="edit-hint" id="editHint">Edit mode — click text · Ctrl+S to save</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   =========================================== */
+class Deck{
+  constructor(){
+    this.stage=document.getElementById('stage');
+    this.restore();                       /* load any saved edits first */
+    this.slides=[...document.querySelectorAll('.slide')];
+    this.i=0;
+    this.progress=document.getElementById('progress');
+    this.curNum=document.getElementById('curNum');
+    document.getElementById('totNum').textContent=String(this.slides.length).padStart(2,'0');
+    this.scale();addEventListener('resize',()=>this.scale());
+    this.bindNav();
+    this.show(0);
+  }
+  scale(){
+    const f=Math.min(innerWidth/1920,innerHeight/1080);
+    const x=(innerWidth-1920*f)/2, y=(innerHeight-1080*f)/2;
+    this.stage.style.transform=`translate(${x}px,${y}px) scale(${f})`;
+  }
+  show(n){
+    this.i=Math.max(0,Math.min(n,this.slides.length-1));
+    this.slides.forEach((s,k)=>{const on=k===this.i;s.classList.toggle('active',on);s.classList.toggle('visible',on);});
+    this.progress.style.width=((this.i+1)/this.slides.length*100)+'%';
+    this.curNum.textContent=String(this.i+1).padStart(2,'0');
+  }
+  next(){this.show(this.i+1)}
+  prev(){this.show(this.i-1)}
+  bindNav(){
+    addEventListener('keydown',e=>{
+      if(e.target.getAttribute && e.target.getAttribute('contenteditable')==='true') return;
+      if(['ArrowRight','ArrowDown',' ','PageDown'].includes(e.key)){e.preventDefault();this.next()}
+      else if(['ArrowLeft','ArrowUp','PageUp'].includes(e.key)){e.preventDefault();this.prev()}
+      else if(e.key==='Home'){this.show(0)}
+      else if(e.key==='End'){this.show(this.slides.length-1)}
+      else if(e.key==='f'||e.key==='F'){if(!document.fullscreenElement)document.documentElement.requestFullscreen();else document.exitFullscreen()}
+    });
+    let wheelLock=false;
+    addEventListener('wheel',e=>{
+      if(document.body.classList.contains('edit-mode'))return;
+      if(wheelLock)return;if(Math.abs(e.deltaY)<24)return;
+      wheelLock=true;e.deltaY>0?this.next():this.prev();setTimeout(()=>wheelLock=false,650);
+    },{passive:true});
+    let x0=null;
+    addEventListener('touchstart',e=>x0=e.touches[0].clientX,{passive:true});
+    addEventListener('touchend',e=>{if(x0===null)return;const dx=e.changedTouches[0].clientX-x0;
+      if(Math.abs(dx)>60)dx<0?this.next():this.prev();x0=null;},{passive:true});
+  }
+  /* ---- inline editing persistence ---- */
+  saveKey(){return 'fogstack-arch-deck-v1'}
+  restore(){try{const s=localStorage.getItem(this.saveKey());if(s){document.getElementById('slides').innerHTML=s;}}catch(e){}}
+  persist(){try{localStorage.setItem(this.saveKey(),document.getElementById('slides').innerHTML);}catch(e){}}
+}
+const deck=new Deck();
+
+/* ===========================================
+   INLINE EDITOR
+   =========================================== */
+const editor={
+  isActive:false,
+  sel:'h1,h2,h3,p,span,small,li,div.txt,div.sub,div.vars',
+  toggle(){
+    this.isActive=!this.isActive;
+    document.body.classList.toggle('edit-mode',this.isActive);
+    const btn=document.getElementById('editToggle'), hint=document.getElementById('editHint');
+    btn.classList.toggle('active',this.isActive);btn.classList.toggle('show',this.isActive);
+    hint.classList.toggle('show',this.isActive);
+    document.querySelectorAll('#slides '+this.sel).forEach(el=>{
+      if(this.isActive){el.setAttribute('contenteditable','true');}
+      else{el.removeAttribute('contenteditable');}
+    });
+    if(!this.isActive){deck.persist();setTimeout(()=>hint.classList.remove('show'),200);}
+  }
+};
+const hotzone=document.getElementById('editHotzone'),editToggle=document.getElementById('editToggle');
+let hideT=null;
+hotzone.addEventListener('mouseenter',()=>{clearTimeout(hideT);editToggle.classList.add('show')});
+hotzone.addEventListener('mouseleave',()=>{hideT=setTimeout(()=>{if(!editor.isActive)editToggle.classList.remove('show')},400)});
+editToggle.addEventListener('mouseenter',()=>clearTimeout(hideT));
+editToggle.addEventListener('mouseleave',()=>{hideT=setTimeout(()=>{if(!editor.isActive)editToggle.classList.remove('show')},400)});
+editToggle.addEventListener('click',()=>editor.toggle());
+hotzone.addEventListener('click',()=>editor.toggle());
+document.addEventListener('keydown',e=>{
+  if((e.key==='e'||e.key==='E')&&e.target.getAttribute && e.target.getAttribute('contenteditable')!=='true'){editor.toggle();}
+  if((e.ctrlKey||e.metaKey)&&(e.key==='s'||e.key==='S')){e.preventDefault();exportHTML();}
+});
+document.getElementById('slides').addEventListener('input',()=>{if(editor.isActive)deck.persist();});
+
+/* Ctrl+S — download a standalone copy with current edits baked in */
+function exportHTML(){
+  const clone=document.documentElement.cloneNode(true);
+  clone.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
+  clone.querySelector('body').classList.remove('edit-mode');
+  const html='<!DOCTYPE html>\n'+clone.outerHTML;
+  const blob=new Blob([html],{type:'text/html'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='architecture.html';a.click();
+  const hint=document.getElementById('editHint');hint.textContent='Saved a copy → architecture.html';hint.classList.add('show');
+  setTimeout(()=>{hint.classList.remove('show');hint.textContent='Edit mode — click text · Ctrl+S to save';},1800);
+}
+</script>
+</body>
+</html>

@@ -28,7 +28,7 @@ image provides pinned client tools for repeatable checks, but the main stack
 commands currently run on the host.
 
 ```bash
-git clone <repo-url> fogstack
+git clone https://github.com/vankhaivn/fogstack.git fogstack
 cd fogstack
 cp .env.example .env
 ./engine/fog doctor
@@ -108,6 +108,18 @@ Pinned toolbox:
 ./engine/fog-toolbox --build
 ./engine/fog-toolbox terraform version
 ```
+
+## Documentation
+
+- [Tutorial: Your First App](docs/tutorial-first-app.md) — from `fog up` to a deployed app behind a local load balancer.
+- [Architecture](docs/architecture.md) — what fogstack is, how the pieces fit, and how it stays isolated from your host Kubernetes and AWS.
+- [Architecture (slides)](architecture.html) — the same architecture as an interactive slide deck; open it in a browser.
+- [Connect Your Project](docs/connect-your-project.md) — point an outside project's Terraform, SDKs, Kubernetes, and Postgres config at the stack.
+- [AWS Recipes](docs/aws-recipes.md) — S3, SQS, IAM, Lambda, OpenSearch, and in-cluster endpoint workflows on the full profile.
+- [Runbook](docs/runbook.md) — everyday operation: start, stop, status, profiles, backups, version bumps.
+- [Troubleshooting Playbook](docs/playbook.md) — what to do when a command fails or the stack looks stuck.
+- [FAQ](docs/faq.md) — what survives a stop or reboot, upgrades, platform support, host isolation.
+- [Reference](docs/reference.md) — CLI commands, endpoint variables, `.env` settings, containers, ports, and volumes.
 
 ## Limits
 

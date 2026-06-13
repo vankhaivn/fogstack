@@ -29,7 +29,7 @@ Toolbox image cung cấp các client tool được pin version để kiểm tra 
 ổn định, nhưng các lệnh stack chính hiện chạy trên host.
 
 ```bash
-git clone <repo-url> fogstack
+git clone https://github.com/vankhaivn/fogstack.git fogstack
 cd fogstack
 cp .env.example .env
 ./engine/fog doctor
@@ -109,6 +109,20 @@ Toolbox đã pin version:
 ./engine/fog-toolbox --build
 ./engine/fog-toolbox terraform version
 ```
+
+## Tài liệu
+
+- [Tutorial: Your First App](docs/tutorial-first-app.md) — từ `fog up` tới một app chạy sau load balancer cục bộ.
+- [Architecture](docs/architecture.md) — fogstack là gì, các mảnh ghép nối ra sao, và cách nó cách ly khỏi Kubernetes/AWS trên máy bạn.
+- [Architecture (slides)](architecture.html) — bản kiến trúc dạng slide trình chiếu tương tác; mở bằng trình duyệt.
+- [Connect Your Project](docs/connect-your-project.md) — trỏ Terraform, SDK, Kubernetes và Postgres của dự án ngoài vào stack.
+- [AWS Recipes](docs/aws-recipes.md) — workflow S3, SQS, IAM, Lambda, OpenSearch và endpoint trong cluster trên profile full.
+- [Runbook](docs/runbook.md) — vận hành hằng ngày: start, stop, status, đổi profile, backup, nâng version.
+- [Troubleshooting Playbook](docs/playbook.md) — làm gì khi lệnh fail hoặc stack có vẻ kẹt.
+- [FAQ](docs/faq.md) — dữ liệu nào còn lại sau khi stop/reboot, nâng cấp, nền tảng hỗ trợ, cách ly host.
+- [Reference](docs/reference.md) — lệnh CLI, biến endpoint, cấu hình `.env`, container, port và volume.
+
+Các tài liệu trong `docs/` viết bằng tiếng Anh.
 
 ## Giới hạn
 

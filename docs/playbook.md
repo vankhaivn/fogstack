@@ -106,6 +106,54 @@ curl -fsS "$OPENSEARCH_URL/_cluster/health"
 
 If it repeatedly fails after cleanup, increase Docker Desktop memory and retry.
 
+## Nothing Responds After A Reboot
+
+Containers do not all restart on their own after a host reboot or a Docker
+Desktop restart. Run the normal start again:
+
+```bash
+./engine/fog up
+eval "$(./engine/fog endpoints)"
+```
+
+`fog up` reuses what survived and restarts the rest. Data volumes are not
+affected by a reboot. If the cluster was recreated, redeploy your apps and
+re-push images to the registry.
+
+## Stack Misbehaves After `git pull`
+
+After updating fogstack, restart the stack so new pins and scripts take
+effect:
+
+```bash
+./engine/fog down
+./engine/fog up
+```
+
+Rebuild the toolbox if you use it (`./engine/fog-toolbox --build`), and run
+`checks/smoke.sh` as a self-test. If problems persist, do a clean rebuild with
+`./engine/fog down --volumes` — back up Postgres first if you need the data.
+
+## Another kind Cluster Is On The Machine
+
+fogstack only creates, uses, and deletes the cluster named `fogstack`. Other
+kind clusters are left alone, and `fog down` does not touch them. Conflicts
+only happen if another cluster or process already owns one of fogstack's
+ports — `./engine/fog doctor` reports the owner.
+
+## Docker Is Running Out Of Disk
+
+See what is using space:
+
+```bash
+docker system df
+```
+
+Reclaim fogstack-owned space: `./engine/fog down --volumes` removes stack
+containers and data volumes, and old sample-app image tags can be deleted with
+`docker image rm`. Avoid blanket `docker system prune` if you keep unrelated
+projects in Docker — it removes more than fogstack.
+
 ## Host Credentials Look Suspicious
 
 fogstack commands export repo-local AWS config files and a repo-local kubeconfig.
