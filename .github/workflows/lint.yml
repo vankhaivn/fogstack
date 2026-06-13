@@ -39,12 +39,13 @@ jobs:
             bash -lc '
               set -euo pipefail
               shellcheck engine/fog engine/fog-toolbox engine/lib/*.sh stack/scripts/*.sh checks/*.sh
-              terraform fmt -check -recursive terraform
-              for dir in terraform/layer1-cluster terraform/layer2-apps; do
+              terraform fmt -check -recursive examples/full-tour/terraform
+              for dir in examples/full-tour/terraform; do
                 terraform -chdir="$dir" init -backend=false -input=false
                 terraform -chdir="$dir" validate
               done
-              hadolint examples/sample-app/Dockerfile toolbox/Dockerfile
+              helm lint examples/sample-app/chart examples/full-tour/chart
+              hadolint examples/sample-app/Dockerfile examples/full-tour/app/Dockerfile toolbox/Dockerfile
             '
 
       - name: Local runtime note
